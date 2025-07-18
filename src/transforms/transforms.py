@@ -5,7 +5,6 @@ import numpy as np
 import torch
 import torch_geometric.transforms as T
 from joblib import Parallel, delayed
-from torch_geometric.graphgym.config import cfg
 from torch_geometric.utils import add_self_loops, remove_self_loops, subgraph
 from tqdm import tqdm
 
@@ -45,13 +44,12 @@ def pre_transform_in_memory(dataset, transform_func, show_progress=False):
     dataset.data, dataset.slices = type(dataset).collate(data_list)
 
 
-def parallel_pre_transform_in_memory(dataset, transform_func,
-                                     show_progress=False):
+def parallel_pre_transform_in_memory(dataset, transform_func, num_workers=0, show_progress=False):
     """Parallel version of pre_transform_in_memory."""
     if transform_func is None:
         return dataset
 
-    parallel = Parallel(n_jobs=max(1, cfg.num_workers))
+    parallel = Parallel(n_jobs=max(1, num_workers))
     func = delayed(get_batched_func(transform_func))
     pbar = tqdm(grouper(dataset, n=BATCH_SIZE),
                 total=int(np.ceil(len(dataset) / BATCH_SIZE)),

@@ -1,10 +1,5 @@
-from typing import Union, Tuple, List, Dict, Any
-
 import torch
-
-from torch_geometric.data import Batch
 from torch_geometric.utils import unbatch, unbatch_edge_index, remove_self_loops
-from torch_geometric.graphgym.register import register_loss
 
 from torch_scatter import scatter
 
@@ -18,7 +13,6 @@ def entropy(output, epsilon=1e-8):
 
 ### MAXCLIQUE ###
 
-@register_loss("maxclique_loss")
 def maxclique_loss_pyg(batch, beta=0.1):
     data_list = batch.to_data_list()
 
@@ -44,7 +38,6 @@ def maxclique_loss(output, data, beta=0.1):
 
 ### MAXCUT ###
 
-@register_loss("maxcut_loss")
 def maxcut_loss_pyg(data):
     x = (data.x - 0.5) * 2
     src, dst = data.edge_index[0], data.edge_index[1]
@@ -57,7 +50,6 @@ def maxcut_loss(data):
     return torch.matmul(x.transpose(-1, -2), torch.matmul(adj, x)).mean()
 
 
-@register_loss("maxcut_mae")
 def maxcut_mae_pyg(data):
     x = (data.x > 0.5).float()
     x = (x - 0.5) * 2
@@ -110,14 +102,12 @@ def color_loss(output, adj):
 from torch.nn import BCEWithLogitsLoss
 ce_loss = BCEWithLogitsLoss()
 
-@register_loss("plantedclique_loss")
 def plantedclique_loss_pyg(data):
     return ce_loss(data.x, data.y.unsqueeze(-1))
 
 
 ### MDS ###
 
-@register_loss("mds_loss")
 def mds_loss_pyg(data, beta=1.0):
     batch_size = data.batch.max() + 1.0
     
@@ -160,7 +150,6 @@ def mds_loss_pyg(data, beta=1.0):
 #     return loss #/ batch_size
 
 
-@register_loss("mis_loss")
 def mis_loss_pyg(batch, beta=0.1):
     data_list = batch.to_data_list()
 

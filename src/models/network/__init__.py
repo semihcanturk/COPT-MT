@@ -1,0 +1,1 @@
+from src.models.network.gnn import GNN

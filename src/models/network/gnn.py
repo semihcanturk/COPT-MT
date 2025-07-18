@@ -1,25 +1,10 @@
-import logging
-import os
-import os.path as osp
-import time
-from collections import OrderedDict
-from typing import Any, List, Optional, Tuple, Union
-
+from typing import Optional
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-from torch_geometric.nn import (
-    global_add_pool,
-    global_max_pool,
-    global_mean_pool,
-)
-from torch_geometric.nn.resolver import activation_resolver, normalization_resolver
-import torch_geometric.nn.conv as conv_modules
-
-from src.models.head.inductive_node import minmax_norm_pyg
-from src.models.layer.linear import Linear
+from src.models.head import GNNEdgeHead, COPTGraphHead, COPTNodeHead, COPTInductiveNodeHead
+from src.models.layer import GeneralMultiLayer
+from src.models.stage import GNNStackStage
 
 
 class FeatureEncoder(torch.nn.Module):
@@ -53,121 +38,6 @@ class FeatureEncoder(torch.nn.Module):
         return batch
 
 
-class GeneralLayer(torch.nn.Module):
-    def __init__(
-        self,
-        layer: Union[str, torch.nn.Module],
-        in_dim: int,
-        out_dim: int,
-        batch_norm: bool,
-        l2_norm: bool,
-        dropout: float,
-        act: Optional[str],
-        ffn: bool = False,
-        **kwargs,
-    ):
-        super().__init__()
-        if isinstance(layer, str):
-            assert(layer.lower() == 'linear')
-            self.lin = True
-        else:
-            self.lin = False
-        self.layer = Linear(in_dim, out_dim, **kwargs) if self.lin else layer
-        self.batch_norm = batch_norm
-        self.l2_norm = l2_norm
-        
-        post_layers = []
-        if batch_norm:
-            post_layers.append(
-                torch.nn.BatchNorm1d(out_dim, eps=1e-5, momentum=0.1))
-        if dropout > 0:
-            post_layers.append(torch.nn.Dropout(p=dropout, inplace=False))
-        if act is not None:
-            post_layers.append(activation_resolver(act))
-        self.post_layer = nn.Sequential(*post_layers)
-        self.ffn = False if self.lin else ffn
-
-        if self.ffn:
-            # Feed Forward block.
-            if self.batch_norm:
-                self.norm1_local = nn.BatchNorm1d(out_dim)
-            self.ff_linear1 = nn.Linear(out_dim, out_dim*2)
-            self.ff_linear2 = nn.Linear(out_dim*2, out_dim)
-            self.act_fn_ff = activation_resolver(act)
-            if self.batch_norm:
-                self.norm2 = nn.BatchNorm1d(out_dim)
-            self.ff_dropout1 = nn.Dropout(dropout)
-            self.ff_dropout2 = nn.Dropout(dropout)
-
-    def _ff_block(self, x):
-        """Feed Forward block.
-        """
-        x = self.ff_dropout1(self.act_fn_ff(self.ff_linear1(x)))
-        # return x
-        return self.ff_dropout2(self.ff_linear2(x))
-
-    def forward(self, batch):
-        batch = self.layer(batch)
-        x = batch if isinstance(batch, torch.Tensor) else batch.x
-
-        x = self.post_layer(x)
-        if self.l2_norm:
-            x = F.normalize(x, p=2, dim=1)
-
-        if self.ffn:
-            if self.batch_norm:
-                x = self.norm1_local(x)
-            x = x + self._ff_block(x)
-            if self.batch_norm:
-                x = self.norm2(x)
-
-        if isinstance(batch, torch.Tensor):
-            batch = x
-        else:
-            batch.x = x
-
-        return batch
-
-
-class GeneralMultiLayer(torch.nn.Module):
-    def __init__(
-        self,
-        layer: Union[str, torch.nn.Module],
-        in_dim: int,
-        out_dim: int,
-        hid_dim: Optional[int],
-        num_layers: int,
-        batch_norm: bool,
-        l2_norm: bool,
-        dropout: float,
-        act: str,
-        final_act: bool,
-        **kwargs,
-    ) -> None:
-        super().__init__()
-        hid_dim = hid_dim or out_dim
-
-        for i in range(num_layers):
-            d_in = in_dim if i == 0 else hid_dim
-            d_out = out_dim if i == num_layers - 1 else hid_dim
-            layer = GeneralLayer(
-                layer=layer,
-                in_dim=d_in,
-                out_dim=d_out,
-                batch_norm=batch_norm,
-                l2_norm=l2_norm,
-                dropout=dropout,
-                act=None if i == num_layers - 1 and not final_act else act,
-                **kwargs,
-            )
-            self.add_module(f'Layer_{i}', layer)
-
-    def forward(self, batch):
-        for layer in self.children():
-            batch = layer(batch)
-        return batch
-
-
 class BatchNorm1dNode(torch.nn.Module):
     def __init__(self, channels: int) -> None:
         super().__init__()
@@ -186,100 +56,6 @@ class BatchNorm1dEdge(torch.nn.Module):
     def forward(self, batch):
         batch.edge_attr = self.bn(batch.edge_attr)
         return batch
-
-
-class MLP(torch.nn.Module):
-    def __init__(
-        self,
-        in_dim: int,
-        out_dim: int,
-        hid_dim: Optional[int],
-        num_layers: int,
-        batch_norm: bool = True,
-        l2_norm: bool = True,
-        dropout: float = 0.2,
-        act: str = 'relu',
-        **kwargs,
-    ):
-        super().__init__()
-        hid_dim = hid_dim or in_dim
-
-        layers = []
-        if num_layers > 1:
-            layer = GeneralMultiLayer(
-                'linear',
-                in_dim,
-                hid_dim,
-                hid_dim,
-                num_layers - 1,
-                batch_norm,
-                l2_norm,
-                dropout,
-                act,
-                final_act=True,
-                **kwargs,
-            )
-            layers.append(layer)
-        layers.append(Linear(hid_dim, out_dim, bias=True))
-        self.model = nn.Sequential(*layers)
-
-    def forward(self, batch):
-        if isinstance(batch, torch.Tensor):
-            batch = self.model(batch)
-        else:
-            batch.x = self.model(batch.x)
-        return batch
-
-
-class GNNStackStage(torch.nn.Module):
-    def __init__(
-        self,
-        in_dim: int,
-        out_dim: int,
-        num_layers: int,
-        conv: torch.nn.Module,
-        stage_type: str = 'skipsum',
-        final_l2_norm: bool = True,
-        batch_norm: bool = True,
-        l2_norm: bool = True,
-        dropout: float = 0.2,
-        act: Optional[str] = 'relu',
-    ):
-        super().__init__()
-        self.num_layers = num_layers
-        self.stage_type = stage_type
-        self.final_l2_norm = final_l2_norm
-
-        for i in range(num_layers):
-            if stage_type == 'skipconcat':
-                if i == 0:
-                    d_in = in_dim
-                else:
-                    d_in = in_dim + i * out_dim
-            else:
-                d_in = in_dim if i == 0 else out_dim
-            layer = GeneralLayer(conv, d_in, out_dim,
-                                 batch_norm, l2_norm, dropout, act)
-            self.add_module(f'layer{i}', layer)
-
-    def forward(self, batch):
-        for i, layer in enumerate(self.children()):
-            x = batch.x
-            batch = layer(batch)
-            if self.stage_type == 'skipsum':
-                batch.x = x + batch.x
-            elif self.stage_type == 'skipconcat' and i < self.num_layers - 1:
-                batch.x = torch.cat([x, batch.x], dim=1)
-
-        if self.final_l2_norm:
-            batch.x = F.normalize(batch.x, p=2, dim=-1)
-
-        return batch
-
-
-class IdentityHead(torch.nn.Module):
-    def forward(self, batch):
-        return batch.x, batch.y
 
 
 class GNN(torch.nn.Module):
@@ -443,13 +219,13 @@ class GNN(torch.nn.Module):
 
         # Assign the appropriate head based on head_type
         if head_type == 'inductive_node':
-            GNNHead = GNNInductiveNodeHead
+            GNNHead = COPTInductiveNodeHead
         elif head_type == 'node':
-            GNNHead = GNNNodeHead
+            GNNHead = COPTNodeHead
         elif head_type == 'edge':
             GNNHead = GNNEdgeHead
         elif head_type == 'graph':
-            GNNHead = GNNGraphHead
+            GNNHead = COPTGraphHead
         else:
             raise ValueError(f"Unknown head_type: {head_type}")
 
@@ -474,136 +250,3 @@ class GNN(torch.nn.Module):
         for module in self.children():
             batch = module(batch)
         return batch
-
-
-class GNNNodeHead(torch.nn.Module):
-    r"""A GNN prediction head for node-level prediction tasks.
-
-    Args:
-        dim_in (int): The input feature dimension.
-        dim_out (int): The output feature dimension.
-    """
-    def __init__(self, dim_in: int, dim_out: int, dim_hid: int, layers_post_mp: int, batch_norm: bool, l2_norm: bool, *args, **kwargs):
-        super().__init__()
-        self.layer_post_mp = MLP(dim_in, dim_out, dim_hid, layers_post_mp, batch_norm=batch_norm,
-                                 l2_norm=l2_norm, dropout=0.2, act='relu')
-
-    def _apply_index(self, batch):
-        x = batch.x
-        y = batch.y if 'y' in batch else None
-
-        if 'split' not in batch:
-            return x, y
-
-        mask = batch[f'{batch.split}_mask']
-        return x[mask], y[mask] if y is not None else None
-
-    def forward(self, batch):
-        batch = self.layer_post_mp(batch)
-        pred, label = self._apply_index(batch)
-        return pred, label
-
-
-class GNNInductiveNodeHead(nn.Module):
-    """
-    GNN prediction head for inductive node prediction tasks.
-
-    Args:
-        dim_in (int): Input dimension
-        dim_out (int): Output dimension. For binary prediction, dim_out=1.
-    """
-    def __init__(self, dim_in: int, dim_out: int, dim_hid: int, layers_post_mp: int, batch_norm: bool, l2_norm: bool,
-                 last_act: str = None, minmax: bool = False, *args, **kwargs):
-        super().__init__()
-        self.layer_post_mp = MLP(dim_in, dim_out, dim_hid, layers_post_mp, batch_norm=batch_norm,
-                                 l2_norm=l2_norm, dropout=0.2, act='relu')
-
-        self.last_act = None if last_act is None else activation_resolver(last_act)
-        self.last_norm = None if not minmax is None else minmax_norm_pyg
-
-    def forward(self, batch):
-        batch = self.layer_post_mp(batch)
-        batch = batch if self.last_act is None else self.last_act(batch)
-        batch = batch if self.last_norm is None else self.last_norm(batch)
-        return batch
-
-
-class GNNEdgeHead(torch.nn.Module):
-    r"""A GNN prediction head for edge-level/link-level prediction tasks.
-
-    Args:
-        dim_in (int): The input feature dimension.
-        dim_out (int): The output feature dimension.
-    """
-    def __init__(self, dim_in: int, dim_out: int, dim_hid: int, layers_post_mp: int, batch_norm: bool, l2_norm: bool, edge_decoding='concat', *args, **kwargs):
-        super().__init__()
-        # Module to decode edges from node embeddings:
-        self.edge_decoding = edge_decoding
-        if edge_decoding == 'concat':
-            self.layer_post_mp = MLP(dim_in * 2, dim_out, dim_hid, layers_post_mp, batch_norm=batch_norm,
-                                     l2_norm=l2_norm, dropout=0.2, act='relu')
-            self.decode_module = lambda v1, v2: \
-                self.layer_post_mp(torch.cat((v1, v2), dim=-1))
-        else:
-            if dim_out > 1:
-                raise ValueError(f"Binary edge decoding "
-                                 f"'{edge_decoding}' is used for "
-                                 f"multi-class classification")
-            self.layer_post_mp = MLP(dim_in, dim_in, dim_hid, layers_post_mp, batch_norm=batch_norm,
-                                     l2_norm=l2_norm, dropout=0.2, act='relu')
-            if edge_decoding == 'dot':
-                self.decode_module = lambda v1, v2: torch.sum(v1 * v2, dim=-1)
-            elif edge_decoding == 'cosine_similarity':
-                self.decode_module = torch.nn.CosineSimilarity(dim=-1)
-            else:
-                raise ValueError(f"Unknown edge decoding "
-                                 f"'{edge_decoding}'")
-
-    def _apply_index(self, batch):
-        index = f'{batch.split}_edge_index'
-        label = f'{batch.split}_edge_label'
-        return batch.x[batch[index]], batch[label]
-
-    def forward(self, batch):
-        if self.edge_decoding != 'concat':
-            batch = self.layer_post_mp(batch)
-        pred, label = self._apply_index(batch)
-        nodes_first = pred[0]
-        nodes_second = pred[1]
-        pred = self.decode_module(nodes_first, nodes_second)
-        return pred, label
-
-
-class GNNGraphHead(torch.nn.Module):
-    r"""A GNN prediction head for graph-level prediction tasks.
-    A post message passing layer (as specified by :obj:`cfg.gnn.post_mp`) is
-    used to transform the pooled graph-level embeddings using an MLP.
-
-    Args:
-        dim_in (int): The input feature dimension.
-        dim_out (int): The output feature dimension.
-    """
-    def __init__(self, dim_in: int, dim_out: int, dim_hid: int, layers_post_mp: int, batch_norm: bool, l2_norm: bool, graph_pooling: str, *args, **kwargs):
-        super().__init__()
-        self.layer_post_mp = MLP(dim_in, dim_out, dim_hid, layers_post_mp, batch_norm=batch_norm,
-                                 l2_norm=l2_norm, dropout=0.2, act='relu')
-
-        # Set pooling_fun based on graph_pooling
-        if graph_pooling == 'add':
-            self.pooling_fun = global_add_pool
-        elif graph_pooling == 'max':
-            self.pooling_fun = global_max_pool
-        elif graph_pooling == 'mean':
-            self.pooling_fun = global_mean_pool
-        else:
-            raise ValueError(f"Unknown graph_pooling: {graph_pooling}")
-
-    def _apply_index(self, batch):
-        return batch.graph_feature, batch.y
-
-    def forward(self, batch):
-        graph_emb = self.pooling_fun(batch.x, batch.batch)
-        graph_emb = self.layer_post_mp(graph_emb)
-        batch.graph_feature = graph_emb
-        pred, label = self._apply_index(batch)
-        return pred, label
