@@ -1,0 +1,12 @@
+# @package _global_
+
+# to execute this experiment run:
+# python src/train.py experiment=csl/gcn_csl
+
+defaults:
+  - csl/gcn_csl_base.yaml
+
+data:
+  transforms:
+    constant:
+      _target_: torch_geometric.transforms.Constant

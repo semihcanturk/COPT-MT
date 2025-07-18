@@ -1,0 +1,20 @@
+_target_: src.data.synthetic_datamodule.SyntheticDataModule
+data_dir: ${paths.data_dir}
+format: 'rb'
+name: 'small'  # Options: "MUTAG", "PROTEINS", "ENZYMES", "DD", "NCI1", etc.
+task: 'maxclique'
+batch_size: 32  # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+train_val_test_split: [0.7, 0.1, 0.2]
+labels: False
+graph_stats: ['degree', 'cluster_coefficient', 'triangle_count']
+num_workers: 0
+pin_memory: False
+
+num_samples: 5000
+n: [200, 300]
+na: [20, 25]
+k: [5, 12]
+
+# Optional transforms to apply to the data
+# By default, NormalizeFeatures is always applied
+transforms: null

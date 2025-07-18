@@ -1,0 +1,40 @@
+# @package _global_
+
+# not meant to run by itself as CSL does not have any node/edge features.
+# run `gcn_csl` instead to run CSL without any PSE:
+# python src/train.py experiment=csl/gcn_csl
+
+defaults:
+  - override /data: gnn_benchmark.yaml
+  - override /model: gcn.yaml
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+  - override /logger: wandb.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["graph", "gcn", "csl", "graph_classification"]
+
+seed: 12345
+
+trainer:
+  min_epochs: 10
+  max_epochs: 100
+  gradient_clip_val: 0.5
+
+model:
+  task: "graph"
+  num_classes: 10
+  net:
+    in_channels: 1
+    out_channels: 10  # Should match num_classes
+
+data:
+  dataset_name: "CSL"
+  batch_size: 32
+
+logger:
+  wandb:
+    tags: ${tags}
+    group: "gcn_graph_classification"

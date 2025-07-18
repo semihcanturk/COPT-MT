@@ -1,0 +1,9 @@
+_target_: src.data.malnet_datamodule.MalNetDataModule
+data_dir: ${paths.data_dir}
+batch_size: 32  # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+num_workers: 0
+pin_memory: True
+
+# Optional transforms to apply to the data
+# By default, NormalizeFeatures is always applied
+transforms: null

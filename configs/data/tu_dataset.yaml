@@ -1,0 +1,11 @@
+_target_: src.data.tu_datamodule.TUDataModule
+data_dir: ${paths.data_dir}
+dataset_name: "MUTAG"  # Options: "MUTAG", "PROTEINS", "ENZYMES", "DD", "NCI1", etc.
+batch_size: 32  # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+train_val_test_split: [0.7, 0.1, 0.2]
+num_workers: 0
+pin_memory: False
+
+# Optional transforms to apply to the data
+# By default, NormalizeFeatures is always applied
+transforms: null

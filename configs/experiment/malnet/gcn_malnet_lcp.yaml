@@ -1,0 +1,29 @@
+# @package _global_
+
+# to execute this experiment run:
+# python src/train.py experiment=malnet/gcn_malnet_lcp
+
+defaults:
+  - malnet/gcn_malnet_base.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["graph", "gcn", "malnet", "graph_classification", "lcp"]
+
+model:
+  net:
+    in_channels: 5  # Number of LCP features
+
+
+data:
+  transforms:
+    lcp:
+      _target_: src.transforms.lcp.AddLocalCurvatureProfile
+      attr_name: null
+
+
+logger:
+  wandb:
+    tags: ${tags}
+    group: "gcn_graph_classification"

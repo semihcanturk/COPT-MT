@@ -1,0 +1,29 @@
+_target_: src.models.gcn_module.GCNLitModule
+
+task: "graph"  # Options: "graph", "node"
+num_classes: 2  # Number of classes for classification
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0001
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+net:
+  _target_: src.models.components.gcn_net.GCNNet
+  in_channels: 3  # Number of input features
+  hidden_channels: 64
+  out_channels: 2  # Should match num_classes
+  num_layers: 4
+  dropout: 0.5
+  task: ${..task}  # Reference the task from parent config
+
+# compile model for faster training with pytorch 2.0
+compile: false

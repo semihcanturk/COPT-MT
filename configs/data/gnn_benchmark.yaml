@@ -1,0 +1,10 @@
+_target_: src.data.gnn_benchmark_datamodule.GNNBenchmarkDataModule
+data_dir: ${paths.data_dir}
+dataset_name: "MNIST"  # Options: "PATTERN", "CLUSTER", "MNIST", "CIFAR10"
+batch_size: 32  # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+num_workers: 0
+pin_memory: True
+
+# Optional transforms to apply to the data
+# By default, NormalizeFeatures is always applied
+transforms: null

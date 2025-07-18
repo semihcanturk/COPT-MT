@@ -1,0 +1,12 @@
+# @package _global_
+
+# to execute this experiment run:
+# python src/train.py experiment=malnet/gcn_malnet
+
+defaults:
+  - malnet/gcn_malnet_base.yaml
+
+data:
+  transforms:
+    constant:
+      _target_: torch_geometric.transforms.Constant
