@@ -1,4 +1,3 @@
-from loguru import logger
 import numpy as np
 import networkx as nx
 import random
@@ -6,7 +5,11 @@ import torch
 from torch_geometric.utils.convert import from_networkx
 
 from src.data.datasets.synthetic import SyntheticDataset
+from src.utils import RankedLogger
 from src.utils.utils_graphgym import parallelize_fn
+
+
+log = RankedLogger(__name__, rank_zero_only=True)
 
 
 class PCDataset(SyntheticDataset):
@@ -39,9 +42,9 @@ class PCDataset(SyntheticDataset):
     def process(self):
         # Read data into huge `Data` list.
         
-        logger.info("Generating graphs...")
+        log.info("Generating graphs...")
         if self.multiprocessing:
-            logger.info(f"   num_processes={self.num_workers}")
+            log.info(f"   num_processes={self.num_workers}")
             data_list = parallelize_fn(range(self.format_cfg.num_samples), self.create_graph, num_processes=self.num_workers)
         else:
             data_list = [self.create_graph(idx) for idx in range(self.format_cfg.num_samples)]
@@ -54,18 +57,18 @@ class PCDataset(SyntheticDataset):
             data.y = y
             data_list.append(data)
 
-        logger.info("Filtering data...")
+        log.info("Filtering data...")
         if self.pre_filter is not None:
             data_list = [data for data in data_list if self.pre_filter(data)]
 
-        logger.info("pre transform data...")
+        log.info("pre transform data...")
         if self.pre_transform is not None:
             if self.multiprocessing:
-                logger.info(f"   num_processes={self.num_workers}")
+                log.info(f"   num_processes={self.num_workers}")
                 data_list = parallelize_fn(data_list, self.pre_transform, num_processes=self.num_workers)
             else:
                 data_list = [self.pre_transform(data) for data in data_list]
 
-        logger.info("Saving data...")
+        log.info("Saving data...")
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])

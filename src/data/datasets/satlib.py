@@ -1,9 +1,6 @@
-import os
 import os.path as osp
 from torch.multiprocessing import cpu_count
 from pathlib import Path
-import shutil
-from loguru import logger
 import csv
 
 import torch
@@ -16,7 +13,11 @@ import numpy as np
 import networkx as nx
 from pysat.formula import CNF
 
+from src.utils import RankedLogger
 from src.utils.utils_graphgym import fun_pbar, parallelize_fn_tqdm
+
+
+log = RankedLogger(__name__, rank_zero_only=True)
 
 
 class SATLIB(InMemoryDataset):
@@ -121,26 +122,26 @@ class SATLIB(InMemoryDataset):
         return g_pyg
 
     def process(self):
-        logger.info("Generating graphs...")
+        log.info("Generating graphs...")
         path_list = list(Path(self.raw_dir).rglob("*.cnf"))
         if self.multiprocessing:
-            logger.info(f"   num_processes={self.num_workers}")
+            log.info(f"   num_processes={self.num_workers}")
             data_list = parallelize_fn_tqdm(path_list, self.build_graph, num_processes=self.num_workers)
         else:
             pbar = tqdm(total=len(list(path_list)))
             pbar.set_description(f'Graph generation')
             data_list = [fun_pbar(self.build_graph, f, pbar) for f in Path(self.raw_dir).rglob("*.cnf")]
 
-        logger.info("pre transform data...")
+        log.info("pre transform data...")
         if self.pre_transform is not None:
             if self.multiprocessing:
-                logger.info(f"   num_processes={self.num_workers}")
+                log.info(f"   num_processes={self.num_workers}")
                 data_list = parallelize_fn_tqdm(data_list, self.pre_transform, num_processes=self.num_workers)
             else:
                 pbar_pre = tqdm(total=len(data_list))
                 pbar_pre.set_description(f'Graph pre-transform')
                 data_list = [fun_pbar(self.pre_transform, data, pbar_pre) for data in data_list]
 
-        logger.info("Saving data...")
+        log.info("Saving data...")
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])

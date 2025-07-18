@@ -2,13 +2,16 @@ from torch.multiprocessing import cpu_count
 from typing import Optional, Callable, List
 
 import os.path as osp
-from loguru import logger
 
 import torch
 from torch_geometric.data import InMemoryDataset
 from tqdm import tqdm
 
+from src.utils import RankedLogger
 from src.utils.utils_graphgym import parallelize_fn, parallelize_fn_tqdm, fun_pbar
+
+
+log = RankedLogger(__name__, rank_zero_only=True)
 
 
 class SyntheticDataset(InMemoryDataset):
@@ -36,9 +39,9 @@ class SyntheticDataset(InMemoryDataset):
     def process(self):
         # Read data into huge `Data` list.
 
-        logger.info("Generating graphs...")
+        log.info("Generating graphs...")
         if self.multiprocessing:
-            logger.info(f"   num_processes={self.num_workers}")
+            log.info(f"   num_processes={self.num_workers}")
             data_list = parallelize_fn_tqdm(range(self.num_samples), self.create_graph,
                                             num_processes=self.num_workers)
         else:
@@ -46,21 +49,21 @@ class SyntheticDataset(InMemoryDataset):
             pbar.set_description(f'Graph generation')
             data_list = [fun_pbar(self.create_graph, idx, pbar) for idx in range(self.num_samples)]
 
-        logger.info("Filtering data...")
+        log.info("Filtering data...")
         if self.pre_filter is not None:
             data_list = [data for data in data_list if self.pre_filter(data)]
 
-        logger.info("pre transform data...")
+        log.info("pre transform data...")
         if self.pre_transform is not None:
             if self.multiprocessing:
-                logger.info(f"   num_processes={self.num_workers}")
+                log.info(f"   num_processes={self.num_workers}")
                 data_list = parallelize_fn_tqdm(data_list, self.pre_transform, num_processes=self.num_workers)
             else:
                 pbar_pre = tqdm(total=self.num_samples)
                 pbar_pre.set_description('Graph pre-transform')
                 data_list = [fun_pbar(self.pre_transform, data, pbar_pre) for data in data_list]
 
-        logger.info("Saving data...")
+        log.info("Saving data...")
         self.save(data_list, self.processed_paths[0]) # PyG >= 2.4
         # PyG < 2.4
         # data, slices = self.collate(data_list)

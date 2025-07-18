@@ -1,7 +1,6 @@
 import os
 import os.path as osp
 from torch.multiprocessing import cpu_count
-from loguru import logger
 
 import torch
 from tqdm import tqdm
@@ -10,7 +9,11 @@ from torch_geometric.utils import add_self_loops, from_networkx
 from torch_geometric.graphgym.config import cfg
 import networkx as nx
 
+from src.utils import RankedLogger
 from src.utils.utils_graphgym import fun_pbar, parallelize_fn_tqdm
+
+
+log = RankedLogger(__name__, rank_zero_only=True)
 
 
 class Gset(InMemoryDataset):
@@ -86,26 +89,26 @@ class Gset(InMemoryDataset):
         return g_pyg
 
     def process(self):
-        logger.info("Processing graphs...")
+        log.info("Processing graphs...")
         path_list = [os.path.join(self.raw_dir, f'G{i}') for i in self.idx_dict[self.name]]
         if self.multiprocessing:
-            logger.info(f"   num_processes={self.num_workers}")
+            log.info(f"   num_processes={self.num_workers}")
             data_list = parallelize_fn_tqdm(path_list, self.build_graph, num_processes=self.num_workers)
         else:
             pbar = tqdm(total=len(list(path_list)))
             pbar.set_description(f'Graph generation')
             data_list = [fun_pbar(self.build_graph, f, pbar) for f in path_list]
 
-        logger.info("pre transform data...")
+        log.info("pre transform data...")
         if self.pre_transform is not None:
             if self.multiprocessing:
-                logger.info(f"   num_processes={self.num_workers}")
+                log.info(f"   num_processes={self.num_workers}")
                 data_list = parallelize_fn_tqdm(data_list, self.pre_transform, num_processes=self.num_workers)
             else:
                 pbar_pre = tqdm(total=len(data_list))
                 pbar_pre.set_description(f'Graph pre-transform')
                 data_list = [fun_pbar(self.pre_transform, data, pbar_pre) for data in data_list]
 
-        logger.info("Saving data...")
+        log.info("Saving data...")
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
