@@ -1,0 +1,16 @@
+# @package _global_
+
+data:
+  task: 'maxclique'
+
+model:
+  criterion:
+    _target_: src.models.loss.copt_loss.maxclique_loss_pyg
+    _partial_: True
+
+  metrics:
+    size:
+      _target_: src.utils.metrics.maxclique_size_pyg
+      _partial_: True
+      dec_length: 300
+      num_seeds: 10

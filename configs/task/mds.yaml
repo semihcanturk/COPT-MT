@@ -1,0 +1,17 @@
+# @package _global_
+
+data:
+  task: 'mds'
+
+model:
+  task: 'mds'
+
+  criterion:
+    _target_: src.models.loss.copt_loss.mds_loss_pyg
+    _partial_: True
+
+  metrics:
+    size:
+      _target_: src.utils.metrics.mds_size_pyg
+      _partial_: True
+      num_seeds: 1

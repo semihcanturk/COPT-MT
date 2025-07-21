@@ -1,7 +1,7 @@
 _target_: src.models.copt_module.COPTModule
 
 optimizer:
-  _target_: torch.optim.Adam
+  _target_: torch.optim.AdamW
   _partial_: True
   lr: 0.001
   weight_decay: 0.0
@@ -28,7 +28,7 @@ net:
       dim_in: 1
       dim_pe: 32
       dim_emb: 32
-      stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
+      stat_list: ['degree', 'eccentricity', 'cluster_coefficient', 'triangle_count']
     node_encoder_bn: True
   conv:
     _target_: src.models.layer.gconconv.GCONLayer
@@ -60,18 +60,19 @@ net:
   edge_decoding: 'concat'
   graph_pooling: 'add'
 
-criterion:
-  _target_: src.models.loss.copt_loss.maxclique_loss_pyg
-  _partial_: True
+#criterion:
+#  _target_: src.models.loss.copt_loss.maxclique_loss_pyg
+#  _partial_: True
+#
+#metrics:
+#  size:
+#    _target_: src.utils.metrics.maxclique_size_pyg
+#    _partial_: True
+#    dec_length: 300
+#    num_seeds: 10
+#
+#task: 'maxclique'
 
-metrics:
-  size:
-    _target_: src.utils.metrics.maxclique_size_pyg
-    _partial_: True
-    dec_length: 300
-    num_seeds: 10
-
-task: 'maxclique'
 labels: False
 
 # compile model for faster training with pytorch 2.0

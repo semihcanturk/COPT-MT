@@ -1,0 +1,20 @@
+_target_: src.data.synthetic_datamodule.SyntheticDataModule
+data_dir: ${paths.data_dir}
+format: 'ba'
+name: 'large'
+task: 'maxcut'
+batch_size: 256  # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+train_val_test_split: [0.7, 0.1, 0.2]
+labels: False
+graph_stats: ['degree', 'eccentricity', 'cluster_coefficient', 'triangle_count']
+num_workers: 0
+pin_memory: False
+
+num_samples: 5000
+n_min: 800
+n_max: 1200
+num_edges: 4
+
+# Optional transforms to apply to the data
+# By default, NormalizeFeatures is always applied
+transforms: null

@@ -1,0 +1,16 @@
+# @package _global_
+
+data:
+  task: 'maxcut'
+
+model:
+  task: 'maxcut'
+
+  criterion:
+    _target_: src.models.loss.copt_loss.maxcut_loss_pyg
+    _partial_: True
+
+  metrics:
+    size:
+      _target_: src.utils.metrics.maxcut_size_pyg
+      _partial_: True
