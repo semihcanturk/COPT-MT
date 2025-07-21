@@ -30,7 +30,7 @@ class FeatureEncoder(torch.nn.Module):
             # Encode integer edge features via `torch.nn.Embedding`:
             self.edge_encoder = edge_encoder
             if edge_encoder_bn:
-                self.edge_encoder_bn = BatchNorm1dNode(dim_hid)
+                self.edge_encoder_bn = BatchNorm1dEdge(dim_hid)
 
     def forward(self, batch):
         for module in self.children():
