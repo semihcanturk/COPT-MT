@@ -1,0 +1,19 @@
+defaults:
+  - base
+
+net:
+  conv:
+    _target_: src.models.layer.general.LayerWrapper
+    layer:
+      _target_: torch_geometric.nn.conv.GINConv
+      nn:
+        _target_: torch.nn.Sequential
+        _args_:
+        - _target_: torch.nn.Linear
+          in_features: 32
+          out_features: 64  # or whatever hidden dimension you want
+        - _target_: torch.nn.ReLU
+        - _target_: torch.nn.Linear
+          in_features: 64
+          out_features: 32
+      train_eps: false  # optional: whether to learn the epsilon parameter

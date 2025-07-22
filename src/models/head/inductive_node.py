@@ -56,7 +56,7 @@ class COPTInductiveNodeHead(GNNInductiveNodeHead):
 
     def forward(self, batch):
         batch = self.layer_post_mp(batch)
-        batch = batch if self.last_act is None else self.last_act(batch)
+        batch.x = batch.x if self.last_act is None else self.last_act(batch.x)
         batch = batch if self.last_norm is None else self.last_norm(batch)
         return batch
 

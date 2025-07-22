@@ -1,35 +1,7 @@
-_target_: src.models.copt_module.COPTModule
-
-optimizer:
-  _target_: torch.optim.AdamW
-  _partial_: True
-  lr: 0.001
-  weight_decay: 0.0
-
-scheduler:
-  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
-  _partial_: True
-  mode: min
-  factor: 0.1
-  patience: 10
+defaults:
+  - base
 
 net:
-  _target_: src.models.network.gnn.GNN
-  dim_in: 1
-  dim_out: 1
-  dim_inner: 32
-  head_type: 'inductive_node'
-  encoder:
-    _target_: src.models.network.gnn.FeatureEncoder
-    dim_in: 1
-    dim_hid: 32
-    node_encoder:
-      _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
-      dim_in: 1
-      dim_pe: 32
-      dim_emb: 32
-      stat_list: ['degree', 'eccentricity', 'cluster_coefficient', 'triangle_count']
-    node_encoder_bn: True
   conv:
     _target_: src.models.layer.gconconv.GCONLayer
     dim_in: 32
@@ -37,43 +9,12 @@ net:
     channel_list: [[0], [1], [2], [4], [0, 1], [1, 2], [2, 4]]
     combine_fn: 'att_bias'
     num_heads: 1
-    activation_att1: 'gelu'
-    activation_att2: 'gelu'
-    activation: 'gelu'
+    activation_att1: 'elu'
+    activation_att2: 'elu'
+    activation: 'elu'
     depth_mlp: 1
     skip: True
     add_self_loops: True
     norm: 'gcn'
     filter_norm_dim: None
     bias: False
-  layers_pre_mp: 1
-  layers_mp: 20
-  layers_post_mp: 1
-  stage_type: 'skipsum'
-  batch_norm: True
-  l2_norm: False
-  final_l2_norm: False
-  dropout: 0.2
-  has_act: True
-  final_act: True
-  act: 'relu'
-  edge_decoding: 'concat'
-  graph_pooling: 'add'
-
-#criterion:
-#  _target_: src.models.loss.copt_loss.maxclique_loss_pyg
-#  _partial_: True
-#
-#metrics:
-#  size:
-#    _target_: src.utils.metrics.maxclique_size_pyg
-#    _partial_: True
-#    dec_length: 300
-#    num_seeds: 10
-#
-#task: 'maxclique'
-
-labels: False
-
-# compile model for faster training with pytorch 2.0
-compile: False

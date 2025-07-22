@@ -38,6 +38,8 @@ class MLP(torch.nn.Module):
                 **kwargs,
             )
             layers.append(layer)
+        else:
+            hid_dim = in_dim
         layers.append(Linear(hid_dim, out_dim, bias=True))
         self.model = nn.Sequential(*layers)
 

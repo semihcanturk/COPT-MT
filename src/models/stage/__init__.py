@@ -1,1 +1,1 @@
-from src.models.stage.gnn import GNNStackStage
+from src.models.stage.gnn import GNNStackStage, GNNConcatStage

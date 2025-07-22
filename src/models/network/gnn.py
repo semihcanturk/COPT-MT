@@ -1,10 +1,10 @@
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 
 from src.models.head import GNNEdgeHead, COPTGraphHead, COPTNodeHead, COPTInductiveNodeHead
 from src.models.layer import GeneralMultiLayer
-from src.models.stage import GNNStackStage
+from src.models.stage import GNNStackStage, GNNConcatStage
 
 
 class FeatureEncoder(torch.nn.Module):
@@ -180,8 +180,8 @@ class GNN(torch.nn.Module):
         final_l2_norm: bool = True,
         dropout: float = 0.2,
         has_act: bool = True,
-        final_act: bool = True,
-        act: str = 'relu',
+        act: Optional[Union[str, torch.nn.Module]] = 'relu',
+        last_act: Optional[Union[str, torch.nn.Module]] = 'sigmoid',
         edge_decoding: str = 'concat',
         graph_pooling: str = 'add',
     ):
@@ -200,7 +200,7 @@ class GNN(torch.nn.Module):
                 l2_norm=l2_norm,
                 dropout=dropout,
                 act=act,
-                final_act=final_act,
+                final_act=True,
             )
             dim_in = dim_inner
         if layers_mp > 0:
@@ -219,23 +219,26 @@ class GNN(torch.nn.Module):
 
         # Assign the appropriate head based on head_type
         if head_type == 'inductive_node':
-            GNNHead = COPTInductiveNodeHead
+            self.GNNHead = COPTInductiveNodeHead
         elif head_type == 'node':
-            GNNHead = COPTNodeHead
+            self.GNNHead = COPTNodeHead
         elif head_type == 'edge':
-            GNNHead = GNNEdgeHead
+            self.GNNHead = GNNEdgeHead
         elif head_type == 'graph':
-            GNNHead = COPTGraphHead
+            self.GNNHead = COPTGraphHead
         else:
             raise ValueError(f"Unknown head_type: {head_type}")
 
-        self.post_mp = GNNHead(
+        self.post_mp = self.GNNHead(
             dim_in,
             dim_out,
             dim_inner,
             layers_post_mp,
             batch_norm=batch_norm,
             l2_norm=l2_norm,
+            act=act,
+            dropout=dropout,
+            last_act=last_act,
             graph_pooling=graph_pooling,
             edge_decoding=edge_decoding,
         )
@@ -249,4 +252,89 @@ class GNN(torch.nn.Module):
     def forward(self, batch):
         for module in self.children():
             batch = module(batch)
+        return batch
+
+
+class HybridGNN(GNN):
+    def __init__(self,
+                 dim_in: int,
+                 dim_out: int,
+                 dim_inner: int,
+                 head_type: str = 'node',
+                 encoder: Optional[torch.nn.Module] = None,
+                 conv: Optional[torch.nn.Module] = None,
+                 layers_pre_mp: int = 1,
+                 layers_mp: int = 5,
+                 layers_post_mp: int = 2,
+                 stage_type: str = 'skipsum',
+                 batch_norm: bool = True,
+                 l2_norm: bool = True,
+                 final_l2_norm: bool = True,
+                 dropout: float = 0.2,
+                 has_act: bool = True,
+                 act: Optional[Union[str, torch.nn.Module]] = 'relu',
+                 last_act: Optional[Union[str, torch.nn.Module]] = 'sigmoid',
+                 edge_decoding: str = 'concat',
+                 graph_pooling: str = 'add',
+                 hybrid_stage: str = 'concat',
+    ):
+        super().__init__(dim_in, dim_out, dim_inner, head_type, encoder, conv, layers_pre_mp, layers_mp, layers_post_mp,
+                         stage_type, batch_norm, l2_norm, final_l2_norm, dropout, has_act, act, last_act,
+                         edge_decoding, graph_pooling)
+        dim_in = dim_inner if layers_pre_mp > 0 else self.encoder.dim_in
+
+        if layers_mp > 0:
+            self.mp = GNNConcatStage(
+                in_dim=dim_in,
+                out_dim=dim_inner,
+                num_layers=layers_mp,
+                conv=conv,
+                stage_type=stage_type,
+                final_l2_norm=final_l2_norm,
+                batch_norm=batch_norm,
+                l2_norm=l2_norm,
+                dropout=dropout,
+                act=act if has_act else None,
+            )
+
+        # TODO: decide what to do. maybe sum x_dims
+        self.stage = hybrid_stage
+        if self.stage == 'sum':
+            post_mp_dim_in = self.mp.x_dims[0]
+        elif self.stage == 'concat':
+            post_mp_dim_in = sum(self.mp.x_dims)
+        else:
+            raise ValueError('Stage {} is not supported.'.format(self.stage))
+        self.post_mp = self.GNNHead(dim_in=post_mp_dim_in,
+                                    dim_out=dim_out,
+                                    dim_hid=dim_inner,
+                                    layers_post_mp=layers_post_mp,
+                                    batch_norm=batch_norm,
+                                    l2_norm=l2_norm,
+                                    act=act,
+                                    dropout=dropout,
+                                    last_act=last_act,
+                                    graph_pooling=graph_pooling,
+                                    edge_decoding=edge_decoding,
+                                    )
+
+        self.reset_parameters()
+
+    def forward(self, batch):
+        if hasattr(self, 'encoder') and self.encoder is not None:
+            batch = self.encoder(batch)
+        if hasattr(self, 'pre_mp'):
+            batch = self.pre_mp(batch)
+        if hasattr(self, 'mp'):
+            batch = self.mp(batch)
+
+        # TODO
+        if self.stage == 'sum':
+            x_list = torch.stack(batch.x_list, dim=-1)
+            x_list = torch.sum(x_list, dim=-1)
+        elif self.stage == 'concat':
+            x_list = torch.cat(batch.x_list, dim=-1)
+        batch.x = x_list
+        batch = self.post_mp(batch)
+
         return batch

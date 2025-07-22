@@ -1,0 +1,64 @@
+_target_: src.models.copt_module.COPTModule
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: True
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: src.models.optimizer.extra_optimizers.cosine_with_warmup_scheduler
+  _partial_: True
+  num_warmup_epochs: 50
+  max_epoch: 300
+
+net:
+  _target_: src.models.network.gnn.HybridGNN
+  dim_in: 1
+  dim_out: 1
+  dim_inner: 32
+  head_type: 'inductive_node'
+  encoder:
+    _target_: src.models.network.gnn.FeatureEncoder
+    dim_in: 1
+    dim_hid: 32
+    node_encoder:
+      _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
+      dim_in: 1
+      dim_pe: 32
+      dim_emb: 32
+      stat_list: ['degree', 'eccentricity', 'cluster_coefficient', 'triangle_count']
+    node_encoder_bn: True
+  layers_pre_mp: 1
+  layers_mp: 20
+  layers_post_mp: 1
+  stage_type: 'stack'
+  batch_norm: True
+  l2_norm: False
+  final_l2_norm: False
+  dropout: 0.3
+  has_act: True
+  act:
+    _target_: torch.nn.LeakyReLU
+    negative_slope: 0.3
+  last_act: 'sigmoid'
+  edge_decoding: 'concat'
+  graph_pooling: 'add'
+
+#criterion:
+#  _target_: src.models.loss.copt_loss.maxclique_loss_pyg
+#  _partial_: True
+#
+#metrics:
+#  size:
+#    _target_: src.utils.metrics.maxclique_size_pyg
+#    _partial_: True
+#    dec_length: 300
+#    num_seeds: 10
+#
+#task: 'maxclique'
+
+labels: False
+
+# compile model for faster training with pytorch 2.0
+compile: False

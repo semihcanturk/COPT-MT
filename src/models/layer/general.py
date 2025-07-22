@@ -15,7 +15,7 @@ class GeneralLayer(torch.nn.Module):
             batch_norm: bool,
             l2_norm: bool,
             dropout: float,
-            act: Optional[str],
+            act: Optional[Union[str, torch.nn.Module]],
             ffn: bool = False,
             **kwargs,
     ):
@@ -36,7 +36,10 @@ class GeneralLayer(torch.nn.Module):
         if dropout > 0:
             post_layers.append(torch.nn.Dropout(p=dropout, inplace=False))
         if act is not None:
-            post_layers.append(activation_resolver(act))
+            if isinstance(act, torch.nn.Module):
+                post_layers.append(act)
+            else:
+                post_layers.append(activation_resolver(act))
         self.post_layer = nn.Sequential(*post_layers)
         self.ffn = False if self.lin else ffn
 
@@ -93,7 +96,7 @@ class GeneralMultiLayer(torch.nn.Module):
             batch_norm: bool,
             l2_norm: bool,
             dropout: float,
-            act: str,
+            act: Optional[Union[str, torch.nn.Module]],
             final_act: bool,
             **kwargs,
     ) -> None:
@@ -127,6 +130,7 @@ class Linear(torch.nn.Module):
         in_channels: int,
         out_channels: int,
         bias: bool = True,
+        **kwargs
     ) -> None:
         super().__init__()
         self.model = torch.nn.Linear(in_channels, out_channels, bias=bias)
@@ -136,4 +140,18 @@ class Linear(torch.nn.Module):
             batch = self.model(batch)
         else:
             batch.x = self.model(batch.x)
+        return batch
+
+
+class LayerWrapper(torch.nn.Module):
+    def __init__(self, layer: torch.nn.Module, edge_attr: bool = False):
+        super().__init__()
+        self.layer = layer
+        self.edge_attr = edge_attr
+
+    def forward(self, batch):
+        if self.edge_attr and hasattr(batch, 'edge_attr') and batch.edge_attr is not None:
+            batch.x = self.layer(batch.x, batch.edge_index, batch.edge_attr)
+        else:
+            batch.x = self.layer(batch.x, batch.edge_index)
         return batch

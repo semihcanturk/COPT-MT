@@ -5,6 +5,6 @@ net:
   conv:
     _target_: src.models.layer.general.LayerWrapper
     layer:
-      _target_: torch_geometric.nn.conv.GCNConv
+      _target_: torch_geometric.nn.conv.GATv2Conv
       in_channels: 32
       out_channels: 32
