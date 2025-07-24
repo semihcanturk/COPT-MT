@@ -7,6 +7,7 @@ import numpy as np
 import hydra
 from lightning import LightningDataModule
 from omegaconf import DictConfig
+from sklearn.model_selection import KFold, train_test_split
 from torch_geometric.loader import DataLoader
 from torch_geometric.utils import to_networkx
 from torch_geometric.transforms import NormalizeFeatures, Compose, Constant
@@ -186,7 +187,9 @@ class SyntheticDataModule(LightningDataModule):
         name: str = "small",
         task: str = "maxcut",
         batch_size: int = 64,
-        train_val_test_split: Tuple[float, float, float] = (0.7, 0.1, 0.2),
+        splits: Union[str, Tuple[float, float, float]] = (0.7, 0.1, 0.2),
+        split_seed: int = 42,
+        split_id: int = 0,
         labels: bool = False,
         graph_stats: Optional[list[str]] = None,
         num_workers: int = 0,
@@ -199,7 +202,7 @@ class SyntheticDataModule(LightningDataModule):
         :param data_dir: The data directory. Defaults to `"data/"`.
         :param dataset_name: The name of the dataset. Defaults to `"MUTAG"`.
         :param batch_size: The batch size. Defaults to `64`.
-        :param train_val_test_split: The train, validation and test split. Defaults to `(0.7, 0.1, 0.2)`.
+        :param splits: The train, validation and test split. Defaults to `(0.7, 0.1, 0.2)`.
         :param num_workers: The number of workers. Defaults to `0`.
         :param pin_memory: Whether to pin memory. Defaults to `False`.
         :param transforms: PyTorch Geometric transforms to apply to the data. Can be a single transform,
@@ -309,6 +312,46 @@ class SyntheticDataModule(LightningDataModule):
             **self.dataset_kwargs
         )
 
+    def split_train_val_test(self, dataset):
+        # Get the total number of samples
+        num_samples = len(dataset)
+
+        # Create indices for the entire dataset
+        indices = list(range(num_samples))
+
+        # Set random seed for reproducibility
+        np.random.seed(self.hparams.split_seed)
+        np.random.shuffle(indices)
+
+        # Calculate split sizes
+        train_size = int(num_samples * self.hparams.splits[0])
+        val_size = int(num_samples * self.hparams.splits[1])
+        test_size = num_samples - train_size - val_size
+
+        # Split indices
+        train_indices = indices[:train_size]
+        val_indices = indices[train_size:train_size + val_size]
+        test_indices = indices[train_size + val_size:]
+
+        # Create dataset subsets using the custom SyntheticDatasetSubset class
+        self.data_train = SyntheticSubset(dataset, train_indices)
+        self.data_val = SyntheticSubset(dataset, val_indices)
+        self.data_test = SyntheticSubset(dataset, test_indices)
+
+    def split_k_fold(self, dataset, k):
+        # separate test set
+        num_samples = len(dataset)
+        indices = list(range(num_samples))
+        train_val_indexes, test_indexes = train_test_split(indices, test_size=float(1 / (k + 1)), random_state=self.hparams.split_seed)
+        self.data_test = dataset[test_indexes]
+        # choose fold to train on
+        kf = KFold(n_splits=k, shuffle=True, random_state=self.hparams.split_seed)
+        dataset = dataset[train_val_indexes]
+        all_splits = [k for k in kf.split(dataset)]
+        train_indexes, val_indexes = all_splits[self.hparams.split_id]
+        train_indexes, val_indexes = train_indexes.tolist(), val_indexes.tolist()
+        self.data_train, self.data_val = dataset[train_indexes], dataset[val_indexes]
+
     def setup(self, stage: Optional[str] = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
 
@@ -338,30 +381,12 @@ class SyntheticDataModule(LightningDataModule):
 
             pre_transform_in_memory(dataset, self.pre_transforms_in_memory, show_progress=True)
 
-            # Get the total number of samples
-            num_samples = len(dataset)
+            if isinstance(self.hparams.splits, str):
+                k, _ = self.hparams.splits.split('-')
+                self.split_k_fold(dataset, int(k))
+            else:
+                self.split_train_val_test(dataset)
 
-            # Create indices for the entire dataset
-            indices = list(range(num_samples))
-
-            # Set random seed for reproducibility
-            np.random.seed(42)
-            np.random.shuffle(indices)
-
-            # Calculate split sizes
-            train_size = int(num_samples * self.hparams.train_val_test_split[0])
-            val_size = int(num_samples * self.hparams.train_val_test_split[1])
-            test_size = num_samples - train_size - val_size
-
-            # Split indices
-            train_indices = indices[:train_size]
-            val_indices = indices[train_size:train_size + val_size]
-            test_indices = indices[train_size + val_size:]
-
-            # Create dataset subsets using the custom SyntheticDatasetSubset class
-            self.data_train = SyntheticSubset(dataset, train_indices)
-            self.data_val = SyntheticSubset(dataset, val_indices)
-            self.data_test = SyntheticSubset(dataset, test_indices)
 
     def train_dataloader(self) -> DataLoader:
         """Create and return the train dataloader.
