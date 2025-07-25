@@ -91,11 +91,47 @@ def maxcut_mae(data):
 
 ### COLORING ###
 
+def color_loss_pyg(data):
+    X = torch.nn.functional.softmax(data.x,dim=-1)
+    edge_index, _ = remove_self_loops(data.edge_index)
+    src, dst = edge_index
+
+    return torch.sum(X[src] * X[dst])
+'''
+
+def color_loss_pyg(data):
+    X = data.x
+    edge_index, _ = remove_self_loops(data.edge_index)
+    src, dst = edge_index
+    term1 = torch.sum((1-X.sum(dim=-1))**2)
+    term2 = torch.sum(X[src] * X[dst])
+
+    return  term1+term2
+'''
+
+'''
 def color_loss(output, adj):
     output = (output - 0.5) * 2
 
     return torch.matmul(output.transpose(-1, -2), torch.matmul(adj, output)).diagonal(dim1=-1, dim2=-2).sum() - 4 * torch.abs(output).sum()
+'''
 
+### CLIQUE COVER ###
+def cliquecover_loss_pyg(data):
+    X = torch.nn.functional.softmax(data.x,dim=-1)
+    edge_index, _ = remove_self_loops(data.edge_index)
+    src, dst = edge_index
+
+    return X.sum() ** 2 - torch.sum(X[src] * X[dst]) - torch.sum(X ** 2)
+
+'''
+def cliquecover_loss_pyg(data):
+    X = torch.nn.functional.softmax(data.x,dim=-1)
+    edge_index, _ = remove_self_loops(data.edge_index)
+    src, dst = edge_index
+
+    return -0.5 * X.sum() + 0.5 * (X.sum(dim=0)**2).sum() - torch.sum(X[src] * X[dst])
+'''
 
 ### PLANTEDCLIQUE ###
 
@@ -163,6 +199,20 @@ def mis_loss_pyg(batch, beta=0.1):
 
     return loss / batch.size(0)
 
+'''
+def mis_loss_pyg(batch, beta=2): #P=2 in QUBO paper
+    data_list = batch.to_data_list()
+
+    loss = 0.0
+    for data in data_list:
+        src, dst = data.edge_index[0], data.edge_index[1]
+
+        loss1 = torch.sum(data.x[src] * data.x[dst])
+        loss2 = data.x.sum()
+        loss += (- loss2 + beta * loss1) * data.num_nodes
+
+    return loss / batch.size(0)
+'''
 
 ### MAXBIPARTITE ###
 

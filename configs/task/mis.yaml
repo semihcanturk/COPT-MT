@@ -1,0 +1,16 @@
+# @package _global_
+
+data:
+  task: 'mis'
+
+model:
+  task: 'mis'
+
+  criterion:
+    _target_: src.models.loss.copt_loss.mis_loss_pyg
+    _partial_: True
+
+  metrics:
+    size:
+      _target_: src.utils.metrics.mis_size_pyg
+      _partial_: True

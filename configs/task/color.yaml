@@ -1,0 +1,16 @@
+# @package _global_
+
+data:
+  task: 'color'
+
+model:
+  task: 'color'
+
+  criterion:
+    _target_: src.models.loss.copt_loss.color_loss_pyg
+    _partial_: True
+
+  metrics:
+    size:
+      _target_: src.utils.metrics.color_violations_pyg
+      _partial_: True

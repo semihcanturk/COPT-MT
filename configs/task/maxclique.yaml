@@ -4,7 +4,7 @@ data:
   task: 'maxclique'
 
 model:
-  task: 'maxclique'
+  task: 'maxclique' 
 
   criterion:
     _target_: src.models.loss.copt_loss.maxclique_loss_pyg

@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torch_geometric.data import Batch
 from torch_geometric.utils import unbatch, unbatch_edge_index, add_self_loops, \
-    remove_self_loops
+    remove_self_loops, to_dense_adj
 from torch_scatter import scatter
 
 
@@ -214,6 +214,22 @@ def maxcut_acc(data):
 
 ### COLORING ###
 
+def color_violations_pyg(batch):
+    data_list = batch.to_data_list()
+    violation_total = []
+
+    for data in data_list:
+        preds = torch.argmax(data.x,dim=-1) 
+
+        edge_index, _ = remove_self_loops(data.edge_index)
+        src, dst = edge_index
+
+        violations = (preds[src] == preds[dst]).sum() // 2
+        violation_total.append(violations)
+
+    return sum(violation_total)/len(violation_total)
+
+
 def color_acc(output, adj, deg_vect):
     output = (output - 0.5) * 2
 
@@ -221,6 +237,30 @@ def color_acc(output, adj, deg_vect):
     bin_enc = (one_hot.float() - 0.5) * 2
 
     return (torch.matmul(bin_enc.transpose(-1, -2), torch.matmul(adj, bin_enc)).diagonal(dim1=-1, dim2=-2).sum(-1) / deg_vect).mean()
+
+
+### CLIQUE COVERING ###
+
+def cliquecover_violations_pyg(batch):
+    data_list = batch.to_data_list()
+    missing_total = []
+
+    for data in data_list:
+        preds_idx = torch.argmax(data.x, dim=-1)  # color per node
+        n = data.num_nodes
+
+        # Build adjacency (0 = no edge, 1 = edge)
+        adj = to_dense_adj(data.edge_index, max_num_nodes=n)[0]
+        adj.fill_diagonal_(0)
+
+        # Compare all pairs
+        same_color = (preds_idx.unsqueeze(0) == preds_idx.unsqueeze(1)).fill_diagonal_(False)  # [n, n]
+        non_edges = (adj == 0)
+        missing = (same_color & non_edges).sum() // 2
+
+        missing_total.append(missing)
+
+    return sum(missing_total) / len(missing_total)
 
 
 ### PLANTEDCLIQUE ###
