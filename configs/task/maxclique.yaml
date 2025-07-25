@@ -4,7 +4,7 @@ data:
   task: 'maxclique'
 
 model:
-  task: 'maxclique'
+  task: 'maxclique' 
 
   optimizer:
     _target_: torch.optim.AdamW
