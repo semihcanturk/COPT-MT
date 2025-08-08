@@ -11,10 +11,6 @@ defaults:
 
 tags: ["graph", "gcn", "csl", "graph_classification", "lappe"]
 
-model:
-  net:
-    in_channels: 5  # Number of LapPE features
-
 data:
   transforms:
     laplacian_pe:
@@ -22,6 +18,10 @@ data:
       k: 5  # Number of Laplacian eigenvectors to use
       is_undirected: True
       attr_name: null
+
+model:
+  net:
+    dim_in: ${data.transforms.laplacian_pe.k}  # Number of LapPE features
 
 logger:
   wandb:

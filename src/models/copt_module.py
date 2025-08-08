@@ -118,7 +118,7 @@ class COPTModule(LightningModule):
         """
         out = self.forward(batch)
         loss = self.criterion(out)
-        return loss
+        return out, loss
 
     def training_step(self, batch, batch_idx):
         """Perform a single training step on a batch of data from the training set.
@@ -127,7 +127,7 @@ class COPTModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        loss = self.model_step(batch)
+        batch, loss = self.model_step(batch)
 
         # update and log metrics
         self.train_loss(loss)
@@ -146,7 +146,7 @@ class COPTModule(LightningModule):
         :param batch: A batch of data from PyTorch Geometric.
         :param batch_idx: The index of the current batch.
         """
-        loss = self.model_step(batch)
+        batch, loss = self.model_step(batch)
         self.val_loss(loss)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         for name, metric_func in self.metrics.items():
@@ -171,7 +171,7 @@ class COPTModule(LightningModule):
         :param batch: A batch of data from PyTorch Geometric.
         :param batch_idx: The index of the current batch.
         """
-        loss = self.model_step(batch)
+        batch, loss = self.model_step(batch)
         self.test_loss(loss)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         for name, metric_func in self.metrics.items():

@@ -11,16 +11,16 @@ defaults:
 
 tags: ["graph", "gcn", "csl", "graph_classification", "rwse"]
 
-model:
-  net:
-    in_channels: 5  # Number of RWSE features
-
 data:
   transforms:
     rwse:
       _target_: torch_geometric.transforms.AddRandomWalkPE
       walk_length: 5
       attr_name: null
+
+model:
+  net:
+    dim_in: ${data.transforms.rwse.walk_length}  # Number of RWSE features
 
 logger:
   wandb:

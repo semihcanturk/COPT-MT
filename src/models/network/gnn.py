@@ -187,7 +187,7 @@ class GNN(torch.nn.Module):
     ):
         super().__init__()
         self.encoder = encoder
-        dim_in = self.encoder.dim_in
+        dim_in = self.encoder.dim_in if encoder is not None else dim_in
 
         if layers_pre_mp > 0:
             self.pre_mp = GeneralMultiLayer(
@@ -281,7 +281,10 @@ class HybridGNN(GNN):
         super().__init__(dim_in, dim_out, dim_inner, head_type, encoder, conv, layers_pre_mp, layers_mp, layers_post_mp,
                          stage_type, batch_norm, l2_norm, final_l2_norm, dropout, has_act, act, last_act,
                          edge_decoding, graph_pooling)
-        dim_in = dim_inner if layers_pre_mp > 0 else self.encoder.dim_in
+        if layers_pre_mp > 0:
+            dim_in = dim_inner
+        else:
+            dim_in = self.encoder.dim_in if encoder is not None else dim_in
 
         if layers_mp > 0:
             self.mp = GNNConcatStage(
