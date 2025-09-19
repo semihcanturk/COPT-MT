@@ -1,0 +1,55 @@
+# @package _global_
+
+data:
+  task: 'multitask'
+
+model:
+
+  criterion:
+    maxcut:
+      _target_: src.models.loss.copt_loss.maxcut_loss_pyg
+      _partial_: True
+    maxclique:
+      _target_: src.models.loss.copt_loss.maxclique_loss_pyg
+      _partial_: True
+    mds:
+      _target_: src.models.loss.copt_loss.mds_loss_pyg
+      _partial_: True
+    mis:
+      _target_: src.models.loss.copt_loss.mis_loss_pyg
+      _partial_: True
+    color:
+      _target_: src.models.loss.copt_loss.color_loss_pyg
+      _partial_: True
+    cliquecover:
+      _target_: src.models.loss.copt_loss.cliquecover_loss_pyg
+      _partial_: True
+
+  metrics:
+    maxcut:
+      size:
+        _target_: src.utils.metrics.maxcut_size_pyg
+        _partial_: True
+    maxclique:
+      size:
+        _target_: src.utils.metrics.maxclique_size_pyg
+        _partial_: True
+        dec_length: 300
+        num_seeds: 10
+    mds:
+      size:
+        _target_: src.utils.metrics.mds_size_pyg
+        _partial_: True
+        num_seeds: 1
+    mis: 
+      size:
+        _target_: src.utils.metrics.mis_size_pyg
+        _partial_: True
+    color:
+      violations:
+        _target_: src.utils.metrics.color_violations_pyg
+        _partial_: True
+    cliquecover:
+      violations:
+        _target_: src.utils.metrics.cliquecover_violations_pyg
+        _partial_: True

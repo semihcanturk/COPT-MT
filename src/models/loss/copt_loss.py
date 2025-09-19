@@ -24,7 +24,9 @@ def maxclique_loss_pyg(batch, beta=0.1):
         loss2 = data.x.sum() ** 2 - loss1 - torch.sum(data.x ** 2)
         loss += (- loss1 + beta * loss2) * data.num_nodes
 
-    return loss / batch.size(0)
+        size = batch.size(0)
+
+    return loss / size
 
 
 def maxclique_loss(output, data, beta=0.1):
@@ -41,7 +43,9 @@ def maxclique_loss(output, data, beta=0.1):
 def maxcut_loss_pyg(data):
     x = (data.x - 0.5) * 2
     src, dst = data.edge_index[0], data.edge_index[1]
-    return torch.sum(x[src] * x[dst]) / len(data.batch.unique())
+    size = len(data.batch.unique())
+
+    return torch.sum(x[src] * x[dst]) / size
 
 
 def maxcut_loss(data):
@@ -153,7 +157,7 @@ def mds_loss_pyg(data, beta=1.0):
 
     loss = p.sum() + beta * (
         scatter(
-            torch.log1p(-p)[row],
+            torch.log1p(0.000001-p)[row],
             index=col,
             reduce='sum',
         ).exp() * (1 - p)
@@ -218,3 +222,8 @@ def mis_loss_pyg(batch, beta=2): #P=2 in QUBO paper
 
 def maxbipartite_loss(output, adj, beta):
     return maxclique_loss(output, torch.matrix_power(adj, 2), beta)
+
+
+
+
+
