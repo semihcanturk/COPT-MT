@@ -259,7 +259,7 @@ def color_violations_pyg(batch):
         violations = (preds[src] == preds[dst]).sum() // 2
         violation_total.append(violations)
 
-    return sum(violation_total)/len(violation_total)
+    return torch.Tensor(violation_total).mean()
 
 
 def color_acc(output, adj, deg_vect):
@@ -292,7 +292,7 @@ def cliquecover_violations_pyg(batch):
 
         missing_total.append(missing)
 
-    return sum(missing_total) / len(missing_total)
+    return torch.Tensor(missing_total).mean()
 
 
 ### PLANTEDCLIQUE ###

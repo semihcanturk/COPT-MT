@@ -179,7 +179,7 @@ def mds_loss_pyg(batch, beta=1.0, reduction='sum'):
 
     loss = p.sum() + beta * (
         scatter(
-            torch.log1p(-p)[row],
+            torch.log1p(0.000001-p)[row],
             index=col,
             reduce='sum',
         ).exp() * (1 - p)
@@ -307,3 +307,8 @@ def mvc_loss(batch, alpha=1.0, beta=1.01, reduction='sum'):
 
 def maxbipartite_loss(output, adj, beta):
     return maxclique_loss(output, torch.matrix_power(adj, 2), beta)
+
+
+
+
+
