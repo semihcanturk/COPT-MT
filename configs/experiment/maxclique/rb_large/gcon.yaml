@@ -11,7 +11,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["maxclique", "rb", "small", "gcon"]
+tags: ["maxclique", "rb", "large", "gcon"]
 
 seed: 12345
 
@@ -37,3 +37,6 @@ model:
     has_act: True
     final_act: True
     act: 'relu'
+    encoder:
+      node_encoder:
+        stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
