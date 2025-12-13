@@ -21,6 +21,7 @@ model:
     color:
       _target_: src.models.loss.copt_loss.color_loss_pyg
       _partial_: True
+      beta: 0.1
     cliquecover:
       _target_: src.models.loss.copt_loss.cliquecover_loss_pyg
       _partial_: True

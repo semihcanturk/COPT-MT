@@ -104,14 +104,18 @@ def color_loss_pyg(data):
 '''
 
 #This one perform way better.
-def color_loss_pyg(data):
+def color_loss_pyg(data, beta = 0.001):
     X = data.x
     edge_index, _ = remove_self_loops(data.edge_index)
     src, dst = edge_index
     term1 = torch.sum((1-X.sum(dim=-1))**2)
     term2 = torch.sum(X[src] * X[dst])
+    #L1 regularization on the colors to force extra colors not to be used
+    #color_usage = X.sum(dim=0)
+    #term3 = beta * color_usage.sum()
+    #term3 = beta * X.max(dim=0).values.sum()
 
-    return  term1+term2
+    return  term1+term2 #+term3
 
 
 '''
@@ -214,6 +218,7 @@ def mis_loss_pyg(batch, beta=0.1):
     return loss / batch.size(0)
 
 '''
+#Performs better than the above
 def mis_loss_pyg(batch, beta=2): #P=2 in QUBO paper
     data_list = batch.to_data_list()
 

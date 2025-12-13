@@ -1,4 +1,4 @@
-from typing import Optional, Union, List, Dict
+from typing import Optional, Union, List, Dict, Any
 
 import torch
 
@@ -6,6 +6,7 @@ from src.models.head import GNNEdgeHead, COPTGraphHead, COPTNodeHead, COPTInduct
 from src.models.layer import GeneralMultiLayer
 from src.models.stage import GNNStackStage, GNNConcatStage
 from torch_geometric.data import Batch
+from torch_geometric.graphgym.init import init_weights
 
 
 class FeatureEncoder(torch.nn.Module):
@@ -247,7 +248,6 @@ class GNN(torch.nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        from torch_geometric.graphgym.init import init_weights
         self.apply(init_weights)
 
     def forward(self, batch):
@@ -345,9 +345,9 @@ class HybridGNN(GNN):
 
 class MultiHybridGNN(GNN):
     def __init__(self,
-                 tasks: List[str], #list of task to build the task heads
+                 tasks: List[str],
                  dim_in: int,
-                 dim_out: Dict[str,int], #dictionary of output_dim for the different heads
+                 dim_out: Dict[str,int],
                  dim_inner: int,
                  head_type: str = 'node',
                  encoder: Optional[torch.nn.Module] = None,
@@ -366,15 +366,22 @@ class MultiHybridGNN(GNN):
                  edge_decoding: str = 'concat',
                  graph_pooling: str = 'add',
                  hybrid_stage: str = 'concat',
+                 finetuning: Optional[Dict[str, Union[str, Any]]] = None
     ):
-        super().__init__(dim_in, dim_out[tasks[0]], dim_inner, head_type, encoder, conv, layers_pre_mp, layers_mp, layers_post_mp,
-                         stage_type, batch_norm, l2_norm, final_l2_norm, dropout, has_act, act, last_act,
-                         edge_decoding, graph_pooling)
+        super().__init__(dim_in, dim_out[tasks[0]], dim_inner, head_type, encoder, conv, 
+                         layers_pre_mp, layers_mp, layers_post_mp,
+                         stage_type, batch_norm, l2_norm, final_l2_norm, dropout, has_act, act, 
+                         last_act, edge_decoding, graph_pooling)
+        
+        self.tasks = tasks
+
+        # Determine input dimension for MP layers
         if layers_pre_mp > 0:
             dim_in = dim_inner
         else:
             dim_in = self.encoder.dim_in if encoder is not None else dim_in
 
+        # Backbone initialization
         if layers_mp > 0:
             self.mp = GNNConcatStage(
                 in_dim=dim_in,
@@ -389,31 +396,43 @@ class MultiHybridGNN(GNN):
                 act=act if has_act else None,
             )
 
-        # TODO: decide what to do. maybe sum x_dims
+        # Check if fine-tuning and load pretrained weights
+        is_finetuning = finetuning is not None and finetuning.get('strategy') is not None
+        if is_finetuning:
+            self._load_pretrained_and_freeze(finetuning)
+        
+        # Calculate post_mp_dim_in
         self.stage = hybrid_stage
         if self.stage == 'sum':
             post_mp_dim_in = self.mp.x_dims[0]
         elif self.stage == 'concat':
             post_mp_dim_in = sum(self.mp.x_dims)
         else:
-            raise ValueError('Stage {} is not supported.'.format(self.stage))
+            raise ValueError(f'Stage {self.stage} is not supported.')
         
-        #Create a dictionary of task heads
-        self.tasks = tasks
-        self.post_mp = torch.nn.ModuleDict({t : self.GNNHead(dim_in=post_mp_dim_in,
-                                    dim_out=dim_out[t],
-                                    dim_hid=dim_inner,
-                                    layers_post_mp=layers_post_mp,
-                                    batch_norm=batch_norm,
-                                    l2_norm=l2_norm,
-                                    act=act,
-                                    dropout=dropout,
-                                    last_act=last_act,
-                                    graph_pooling=graph_pooling,
-                                    edge_decoding=edge_decoding,
-                                    ) for t in self.tasks})
+        # Create task heads
+        self.post_mp = torch.nn.ModuleDict({
+            t: self.GNNHead(
+                dim_in=post_mp_dim_in,
+                dim_out=dim_out[t],
+                dim_hid=dim_inner,
+                layers_post_mp=layers_post_mp,
+                batch_norm=batch_norm,
+                l2_norm=l2_norm,
+                act=act,
+                dropout=dropout,
+                last_act=last_act,
+                graph_pooling=graph_pooling,
+                edge_decoding=edge_decoding,
+            ) for t in self.tasks
+        })
 
-        self.reset_parameters()
+        # Reset parameters
+        if not is_finetuning:
+            self.reset_parameters()
+        #else:
+            #only reset heads
+            #self.post_mp.apply(init_weights)
 
     def forward(self, batch):
         r'''
@@ -426,7 +445,7 @@ class MultiHybridGNN(GNN):
         if hasattr(self, 'mp'):
             batch = self.mp(batch)
 
-        # TODO
+        # Aggregate features
         if self.stage == 'sum':
             x_list = torch.stack(batch.x_list, dim=-1)
             x_list = torch.sum(x_list, dim=-1)
@@ -435,9 +454,52 @@ class MultiHybridGNN(GNN):
             
         batch.x = x_list
 
-        # pass the batch through all the task heads
-        outputs = {task : self.post_mp[task](batch.clone()) for task in self.tasks}
+        # Pass through task heads
+        outputs = {task: self.post_mp[task](batch.clone()) for task in self.tasks}
         
         return outputs
-
     
+
+    def _load_pretrained_and_freeze(self, finetuning: Dict[str, Any]):
+        """Load pretrained backbone weights and apply freezing strategy."""
+
+        strategy = finetuning['strategy']
+        path = finetuning['path']
+        self.tasks = finetuning['new_tasks'] #replace tasks with finetuning tasks
+        
+        # Load checkpoint
+        checkpoint = torch.load(path, weights_only=False)
+        state_dict = checkpoint['state_dict']
+        
+        # Extract backbone weights (remove 'net.' prefix, exclude 'post_mp')
+        backbone_state_dict = {}
+        for k, v in state_dict.items():
+            if not k.startswith('net.'):
+                continue
+            k_clean = k[4:]  # Remove 'net.'
+            if not k_clean.startswith('post_mp'):
+                backbone_state_dict[k_clean] = v
+        
+        # Load backbone
+        self.load_state_dict(backbone_state_dict, strict=False)
+        
+        # Apply finetuning strategy
+        if strategy == 'linear_probing':
+            if hasattr(self, 'encoder') and self.encoder is not None:
+                for param in self.encoder.parameters():
+                    param.requires_grad = False
+            if hasattr(self, 'pre_mp'):
+                for param in self.pre_mp.parameters():
+                    param.requires_grad = False
+            if hasattr(self, 'mp'):
+                for param in self.mp.parameters():
+                    param.requires_grad = False
+        elif strategy == 'finetuning':
+            pass  # Keep all parameters trainable
+        elif strategy == 'pre_post':
+            if hasattr(self, 'mp'):
+                for param in self.mp.parameters():
+                    param.requires_grad = False
+        else:
+            raise ValueError(f"Unknown fine-tuning strategy: '{strategy}'. "
+                        f"Supported strategies: 'linear_probing', 'finetuning', 'pre_post'")

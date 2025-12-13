@@ -6,6 +6,8 @@ from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from typing import Dict, List, Callable, Union, Optional
 from hydra.utils import instantiate
+import warnings
+#from src.models.loss.mtl_strategies import AutomaticWeightedLoss
 
 
 # from src.models.spaces import EVAL_FUNCTION_DICT, EVAL_FUNCTION_DICT_NOLABEL, LOSS_FUNCTION_DICT
@@ -273,7 +275,8 @@ class MultiCOPTModule(LightningModule):
         metrics: Optional[Dict[str, Dict[str, Callable]]] = None,
         labels: bool = False,
         compile: bool = False,
-        weights: Optional[Dict[str,float]] = None
+        weights: Optional[Dict[str,float]] = None,
+        #strategy: str = None
     ) -> None:
         """Initialize a `GCNLitModule`.
 
@@ -297,15 +300,20 @@ class MultiCOPTModule(LightningModule):
         self.criterion = {task : criterion[task] for task in self.tasks} 
         self.metrics = {task : metrics[task] for task in self.tasks}  
 
-        if weights == None:
+        if weights is None:
             self.weights = {task : 1.0/len(self.tasks) for task in self.tasks}
         else:
             self.weights = {task : weights[task] for task in self.tasks}
             #Make sure weights add up to 1
             if abs(sum(self.weights.values()) - 1) > 1e-6:
-                raise ValueError('Weights must add up to 1')
+                self.weights = {task : 1.0/len(self.tasks) for task in self.tasks}
+                warnings.warn(f"Provided weights sum to {sum(self.weights.values()):.2f}, not 1 — reset to uniform (1/{len(self.tasks)}).", UserWarning)
+            
+        #self.strategy = strategy - to be implemented multitask loss strategies (e.g. GradNorm, PCGrad, etc.)
 
         # for averaging loss across batches
+        device = self.device
+
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
         self.test_loss = MeanMetric()
@@ -374,6 +382,21 @@ class MultiCOPTModule(LightningModule):
         }
 
         # Weighted sum of losses
+        '''
+        if self.strategy ==  None:
+            loss = sum(losses[task] for task in self.tasks)
+        elif self.strategy == 'weighted':
+            loss = sum(self.weights[task]*losses[task] for task in self.tasks)
+        elif self.strategy == 'real_time':
+            loss = sum(losses[task]/losses[task].detach() for task in self.tasks) 
+        elif self.strategy == 'automatic':
+            awl = AutomaticWeightedLoss(len(self.tasks))
+            loss = awl(losses)
+        elif self.strategy == 'GradNorm':
+            pass
+        elif self.strategy == 'ParetoMTL':
+            pass
+        '''
         loss = sum(self.weights[task]*losses[task] for task in self.tasks)
 
         return out, losses, loss
@@ -471,6 +494,22 @@ class MultiCOPTModule(LightningModule):
         if self.hparams.compile and stage == "fit":
             self.net = torch.compile(self.net)
 
+    def on_fit_start(self):
+        """Make sure all metrics are on the same device as the model."""
+        device = self.device
+        self.train_loss.to(device)
+        self.val_loss.to(device)
+        self.test_loss.to(device)
+
+        for metric_dict in [self.train_losses, self.val_losses, self.test_losses]:
+            for metric in metric_dict.values():
+                metric.to(device)
+
+        for metrics_group in [self.train_metrics, self.val_metrics, self.test_metrics, self.val_best_metrics]:
+            for task_metrics in metrics_group.values():
+                for metric in task_metrics.values():
+                    metric.to(device)
+
     def configure_optimizers(self) -> Dict[str, Any]:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
         Normally you'd need one. But in the case of GANs or similar you might have multiple.
@@ -495,5 +534,5 @@ class MultiCOPTModule(LightningModule):
         return {"optimizer": optimizer}
 
 
-#if __name__ == "__main__":
-#    _ = MultiCOPTModule(None, None, None)
+if __name__ == "__main__":
+    _ = MultiCOPTModule(None, None, None)
