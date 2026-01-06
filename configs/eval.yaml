@@ -2,17 +2,21 @@
 
 defaults:
   - _self_
-  - data: mnist # choose datamodule with `test_dataloader()` for evaluation
-  - model: mnist
-  - logger: null
+  - data: rb_small # choose datamodule with `test_dataloader()` for evaluation
+  - model: gcon
+  - logger: csv
   - trainer: default
   - paths: default
   - extras: default
   - hydra: default
+
+  - task: maxclique
+  - callbacks: default
+  - experiment: null
 
 task_name: "eval"
 
 tags: ["dev"]
 
 # passing checkpoint path is necessary for evaluation
-ckpt_path: ???
+ckpt_path: null #???
