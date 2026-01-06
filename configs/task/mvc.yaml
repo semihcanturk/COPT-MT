@@ -1,0 +1,27 @@
+# @package _global_
+
+data:
+  task: 'mvc'
+
+model:
+  task: 'mvc'
+
+  criterion:
+    _target_: src.models.loss.copt_loss.mvc_loss
+    _partial_: True
+    alpha: 1.0
+    beta: 1.01
+
+  metrics:
+    size:
+      _target_: src.utils.metrics.mvc_size_pyg
+      _partial_: True
+      num_seeds: 3
+      enable: True
+      test: False
+
+callbacks:
+  model_checkpoint:
+    mode: 'min'
+  early_stopping:
+    mode: 'min'
