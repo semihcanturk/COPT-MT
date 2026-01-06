@@ -3,7 +3,7 @@ from typing import Any, Dict, Tuple
 
 import torch
 from lightning import LightningModule
-from torchmetrics import MaxMetric, MeanMetric
+from torchmetrics import MinMetric, MaxMetric, MeanMetric
 
 # from src.models.spaces import EVAL_FUNCTION_DICT, EVAL_FUNCTION_DICT_NOLABEL, LOSS_FUNCTION_DICT
 
@@ -85,7 +85,8 @@ class COPTModule(LightningModule):
         self.test_metrics = {name: MeanMetric() for name in metrics}
 
         # for tracking best so far validation accuracy
-        self.val_best_metrics = {name: MaxMetric() for name in metrics}
+        BestMetric = MinMetric if task in ['mds', 'mvc'] else MaxMetric
+        self.val_best_metrics = {name: BestMetric() for name in metrics}
 
     def forward(self, batch):
         """Perform a forward pass through the model `self.net`.

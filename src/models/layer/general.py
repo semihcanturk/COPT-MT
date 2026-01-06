@@ -106,7 +106,7 @@ class GeneralMultiLayer(torch.nn.Module):
         for i in range(num_layers):
             d_in = in_dim if i == 0 else hid_dim
             d_out = out_dim if i == num_layers - 1 else hid_dim
-            layer = GeneralLayer(
+            layer_obj = GeneralLayer(
                 layer=layer,
                 in_dim=d_in,
                 out_dim=d_out,
@@ -116,7 +116,7 @@ class GeneralMultiLayer(torch.nn.Module):
                 act=None if i == num_layers - 1 and not final_act else act,
                 **kwargs,
             )
-            self.add_module(f'Layer_{i}', layer)
+            self.add_module(f'Layer_{i}', layer_obj)
 
     def forward(self, batch):
         for layer in self.children():

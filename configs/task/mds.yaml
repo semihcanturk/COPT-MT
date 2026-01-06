@@ -15,3 +15,9 @@ model:
       _target_: src.utils.metrics.mds_size_pyg
       _partial_: True
       num_seeds: 1
+
+callbacks:
+  model_checkpoint:
+    mode: 'min'
+  early_stopping:
+    mode: 'min'
