@@ -221,5 +221,119 @@ class COPTModule(LightningModule):
         return {"optimizer": optimizer}
 
 
+class COPTTransferModule(COPTModule):
+    """LightningModule for transfer learning with pretrained GNN/HybridGNN models.
+
+    This module loads a pretrained GNN/HybridGNN from a checkpoint and freezes
+    all parameters except the output head (post_mp/GNNHead) for transfer learning.
+
+    This module can be used for both graph-level and node-level tasks.
+    """
+
+    def __init__(
+        self,
+        net: torch.nn.Module,
+        pretrain_path: str,
+        criterion: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler,
+        task: str,
+        metrics: Dict = None,
+        labels: bool = False,
+        compile: bool = False,
+        freeze_backbone: bool = True,
+        reset_head: bool = True,
+    ) -> None:
+        """Initialize a `COPTTransferModule`.
+
+        :param net: The model to train (GNN or HybridGNN). Will be loaded with pretrained weights.
+        :param pretrain_path: Path to the pretrained checkpoint file.
+        :param criterion: The loss function.
+        :param optimizer: The optimizer to use for training.
+        :param scheduler: The learning rate scheduler to use for training.
+        :param task: The task type, either "graph" or "node". Defaults to "graph".
+        :param metrics: Dictionary of metrics to compute.
+        :param labels: Whether labels are provided. Defaults to False.
+        :param compile: Whether to compile the model. Defaults to False.
+        :param freeze_backbone: Whether to freeze the backbone (everything except post_mp).
+            Defaults to True.
+        :param reset_head: Whether to reset the head (post_mp) weights. If True, head will be
+            randomly initialized. If False, pretrained head weights will be loaded. Defaults to True.
+        """
+        self._load_pretrained_weights(net, pretrain_path, reset_head=reset_head)
+        if freeze_backbone:
+            self._freeze_backbone(net)
+        
+        super().__init__(
+            net=net,
+            criterion=criterion,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            task=task,
+            metrics=metrics,
+            labels=labels,
+            compile=compile,
+        )
+
+    def _load_pretrained_weights(self, net: torch.nn.Module, pretrain_path: str, reset_head: bool = True) -> None:
+        """Load pretrained weights from a checkpoint into the network.
+        
+        :param net: The network to load weights into.
+        :param pretrain_path: Path to the checkpoint file.
+        :param reset_head: If True, exclude post_mp weights to allow head reset. If False, load all weights.
+        """
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        checkpoint = torch.load(pretrain_path, map_location=device, weights_only=False)
+        
+        if 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+        else:
+            state_dict = checkpoint
+        
+        net_state_dict = {}
+        for key, value in state_dict.items():
+            if key.startswith('net.'):
+                # Remove 'net.' prefix
+                new_key = key[4:]  # Remove 'net.' prefix
+                net_state_dict[new_key] = value
+        
+        # If no 'net.' prefix found, try direct matching
+        if not net_state_dict:
+            # Try to match keys directly
+            model_keys = set(net.state_dict().keys())
+            for key, value in state_dict.items():
+                if key in model_keys:
+                    net_state_dict[key] = value
+        
+        if net_state_dict:
+            model_dict = net.state_dict()
+            # Filter out post_mp keys if resetting head
+            if reset_head:
+                filtered_pretrained_dict = {
+                    k: v for k, v in net_state_dict.items()
+                    if k in model_dict and not k.startswith('post_mp')
+                }
+            else:
+                # Load all matching keys including post_mp
+                filtered_pretrained_dict = {
+                    k: v for k, v in net_state_dict.items()
+                    if k in model_dict
+                }
+            model_dict.update(filtered_pretrained_dict)
+            net.load_state_dict(model_dict, strict=False)
+        else:
+            raise ValueError(f"Could not extract network weights from checkpoint at {pretrain_path}")
+
+    def _freeze_backbone(self, net: torch.nn.Module) -> None:
+        """Freeze all parameters except the output head (post_mp).
+        
+        :param net: The network to freeze.
+        """
+        for name, param in net.named_parameters():
+            if not name.startswith('post_mp'):
+                param.requires_grad = False
+
+
 if __name__ == "__main__":
     _ = COPTModule(None, None, None)

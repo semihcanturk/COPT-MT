@@ -249,6 +249,10 @@ class GNN(torch.nn.Module):
         from torch_geometric.graphgym.init import init_weights
         self.apply(init_weights)
 
+    def reset_head(self):
+        from torch_geometric.graphgym.init import init_weights
+        self.post_mp.apply(init_weights)
+
     def forward(self, batch):
         for module in self.children():
             batch = module(batch)
