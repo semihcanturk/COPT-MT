@@ -164,6 +164,23 @@ def mis_loss_pyg(batch, beta=0.1):
     return loss / batch.size(0)
 
 
+### Min Vertex Cover ###
+
+def mvc_loss(batch, alpha=1.0, beta=1.01):
+    assert beta > alpha, '`beta` must be larger than `alpha`'
+    data_list = batch.to_data_list()
+    loss = 0.0
+
+    for i, data in enumerate(data_list):
+        H_A = data.x.sum()
+        src, dst = data.edge_index
+        uncovered_prob = (1 - data.x[src]) * (1 - data.x[dst])
+        H_B = torch.sum(uncovered_prob)
+        loss += (alpha * H_A + beta * H_B) / data.num_nodes
+
+    return loss / batch.size(0)
+
+
 ### MAXBIPARTITE ###
 
 def maxbipartite_loss(output, adj, beta):

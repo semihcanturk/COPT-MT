@@ -348,6 +348,92 @@ def mis_decoder_pyg(batch, dec_length=300, num_seeds=1):
     return Batch.from_data_list(data_list)
 
 
+### Min Vertex Cover ###
+
+def is_vc(mask, edge_index):
+    """
+    Checks if the boolean mask corresponds to a valid Vertex Cover.
+    A set is a VC if for every edge (u, v), u is in Set OR v is in Set.
+    """
+    if edge_index.numel() == 0:  # Handle empty graph case
+        return True
+
+    row, col = edge_index
+    # Get boolean of whether the edge endpoints are in the mask
+    row_selected = mask[row]
+    col_selected = mask[col]
+
+    # An edge is covered if EITHER endpoint is selected
+    edge_covered = row_selected | col_selected
+
+    return edge_covered.all()
+
+
+def mvc_size_pyg(data, num_seeds: int = 1, enable: bool = True, test: bool = False):
+    """
+    Computes the Minimum Vertex Cover size baseline using a greedy strategy
+    guided by model scores (data.x).
+    """
+    if not test:
+        num_seeds = 1
+        if not enable:
+            return torch.tensor(float('nan'))
+
+    data_list = data.to_data_list()
+
+    vc_size_list_batch = []
+
+    for graph in data_list:
+        # CHANGE 1: We use the original edge_index.
+        # No need for add_self_loops for MVC checks.
+        edge_index = graph.edge_index
+
+        # Determine number of nodes from features x
+        num_nodes = graph.x.size(0)
+
+        best_vc_size_for_graph = float('inf')
+
+        # CHANGE 2: If the graph has no edges, the Min Vertex Cover is empty (size 0).
+        if edge_index.numel() == 0:
+            vc_size_list_batch.append(0)
+            continue
+
+        for skip in range(num_seeds):
+            # vc will be a boolean mask of selected nodes
+            vc = torch.zeros(num_nodes, dtype=torch.bool, device=graph.x.device)
+            p = deepcopy(graph.x).squeeze()
+
+            # Skip Logic (Same as MDS)
+            if skip > 0:
+                for _ in range(skip):
+                    # If p is all -inf, we can't skip anymore
+                    if torch.max(p) == -float('inf'):
+                        break
+                    idx = torch.argmax(p)
+                    p[idx] = -float('inf')
+
+            # Greedy Loop
+            # CHANGE 3: The condition is now based on Edge Coverage
+            while not is_vc(vc, edge_index):
+                if torch.max(p) == -float('inf'):
+                    break  # Should not happen unless graph is disconnected/weird states
+
+                idx = torch.argmax(p)
+                vc[idx] = True
+                p[idx] = -float('inf')
+
+            # Verify and Record
+            if is_vc(vc, edge_index):
+                best_vc_size_for_graph = min(best_vc_size_for_graph, vc.sum().item())
+            else:
+                # Fallback: if loop broke without finding VC, take all nodes (valid VC)
+                best_vc_size_for_graph = min(best_vc_size_for_graph, num_nodes)
+
+        vc_size_list_batch.append(best_vc_size_for_graph)
+
+    return torch.tensor(vc_size_list_batch, dtype=float).mean()
+
+
 ### MAXBIPARTITE ###
 
 def maxbipartite_decoder(output, adj, dec_length):
