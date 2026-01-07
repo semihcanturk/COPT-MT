@@ -428,7 +428,7 @@ class MultiCOPTModule(LightningModule):
         labels: bool = False,
         compile: bool = False,
         weights: Optional[Dict[str,float]] = None,
-        #strategy: str = None
+        strategy: str = 'sum'
     ) -> None:
         """Initialize a `GCNLitModule`.
 
@@ -460,8 +460,15 @@ class MultiCOPTModule(LightningModule):
             if abs(sum(self.weights.values()) - 1) > 1e-6:
                 self.weights = {task : 1.0/len(self.tasks) for task in self.tasks}
                 warnings.warn(f"Provided weights sum to {sum(self.weights.values()):.2f}, not 1 — reset to uniform (1/{len(self.tasks)}).", UserWarning)
-            
-        #self.strategy = strategy - to be implemented multitask loss strategies (e.g. GradNorm, PCGrad, etc.)
+
+        # MTL strategy
+        if strategy not in ['sum', 'alternate', 'pcgrad']:
+            raise ValueError(f"Invalid strategy '{strategy}'. Must be one of {['sum', 'alternate', 'pcgrad']}")    
+        self.strategy = strategy # - to be implemented multitask loss strategies (e.g. GradNorm, PCGrad, etc.)
+        self.current_task_idx = 0
+        self.task_list = list(self.tasks)
+        if strategy == 'pcgrad':
+            self.automatic_optimization = False
 
         # for averaging loss across batches
         device = self.device
@@ -515,7 +522,78 @@ class MultiCOPTModule(LightningModule):
             for metric in task_metrics.values():
                 metric.reset()
 
-    def model_step(self, batch):
+    '''
+    def _pcgrad_step(self, losses: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Apply PCGrad to resolve conflicting gradients.
+        
+        :param losses: Dictionary of task losses
+        :return: Combined loss after gradient projection
+        """
+        # Store original parameters
+        self.net.zero_grad()
+        
+        # Compute gradients for each task
+        task_gradients = {}
+        for task, loss in losses.items():
+            # Compute gradients for this task
+            self.net.zero_grad()
+            loss.backward(retain_graph=True)
+            
+            # Store gradients
+            task_gradients[task] = []
+            for param in self.net.parameters():
+                if param.grad is not None:
+                    task_gradients[task].append(param.grad.clone())
+                else:
+                    task_gradients[task].append(torch.zeros_like(param))
+        
+        # Apply PCGrad: project conflicting gradients
+        self.net.zero_grad()
+        projected_grads = {task: [g.clone() for g in grads] 
+                          for task, grads in task_gradients.items()}
+        
+        # For each pair of tasks, project if conflicting
+        task_names = list(self.tasks)
+        for i, task_i in enumerate(task_names):
+            for j, task_j in enumerate(task_names):
+                if i == j:
+                    continue
+                
+                # Compute dot product between gradient vectors
+                dot_product = sum(
+                    (g_i * g_j).sum()
+                    for g_i, g_j in zip(task_gradients[task_i], task_gradients[task_j])
+                )
+                
+                # If conflicting (negative dot product), project
+                if dot_product < 0:
+                    # Project task_i's gradient away from task_j's gradient
+                    g_j_norm_sq = sum((g ** 2).sum() for g in task_gradients[task_j])
+                    if g_j_norm_sq > 0:
+                        proj_coef = dot_product / g_j_norm_sq
+                        projected_grads[task_i] = [
+                            g_i - proj_coef * g_j
+                            for g_i, g_j in zip(projected_grads[task_i], task_gradients[task_j])
+                        ]
+        
+        # Average the projected gradients with weights
+        final_grads = []
+        for param_idx, param in enumerate(self.net.parameters()):
+            weighted_grad = sum(
+                self.weights[task] * projected_grads[task][param_idx]
+                for task in self.tasks
+            )
+            final_grads.append(weighted_grad)
+        
+        # Set the final gradients
+        for param, grad in zip(self.net.parameters(), final_grads):
+            param.grad = grad
+        
+        # Return weighted average of losses for logging
+        return sum(self.weights[task] * losses[task] for task in self.tasks)
+    '''
+
+    def model_step(self, batch, training=True):
         """Perform a single model step on a batch of data.
 
         :param batch: A batch of data from PyTorch Geometric.
@@ -533,26 +611,23 @@ class MultiCOPTModule(LightningModule):
             for task in self.tasks
         }
 
-        # Weighted sum of losses
-        '''
-        if self.strategy ==  None:
-            loss = sum(losses[task] for task in self.tasks)
-        elif self.strategy == 'weighted':
-            loss = sum(self.weights[task]*losses[task] for task in self.tasks)
-        elif self.strategy == 'real_time':
-            loss = sum(losses[task]/losses[task].detach() for task in self.tasks) 
-        elif self.strategy == 'automatic':
-            awl = AutomaticWeightedLoss(len(self.tasks))
-            loss = awl(losses)
-        elif self.strategy == 'GradNorm':
-            pass
-        elif self.strategy == 'ParetoMTL':
-            pass
-        '''
-        loss = sum(self.weights[task]*losses[task] for task in self.tasks)
+        if training:
+            if self.strategy == 'sum':
+                loss = sum(self.weights[task] * losses[task] for task in self.tasks)
+            elif self.strategy == 'alternate':
+                current_task = self.task_list[self.current_task_idx]
+                loss = losses[current_task]
+            elif self.strategy == 'pcgrad':
+                loss = sum(self.weights[task] * losses[task] for task in self.tasks)
+            else:
+                raise ValueError(f"Unknown strategy: {self.strategy}")
+        else:
+            # During validation/testing, always sum all tasks
+            loss = sum(self.weights[task] * losses[task] for task in self.tasks)
 
         return out, losses, loss
-
+    
+    '''
     def training_step(self, batch, batch_idx):
         """Perform a single training step on a batch of data from the training set.
 
@@ -571,7 +646,64 @@ class MultiCOPTModule(LightningModule):
 
         # return loss or backpropagation will fail
         return loss
+    '''
 
+    def training_step(self, batch, batch_idx):
+        """Perform a single training step.
+        
+        :param batch: A batch of data
+        :param batch_idx: The index of the current batch
+        :return: Loss tensor for backpropagation
+        """
+        if self.strategy == 'pcgrad':
+            opt = self.optimizers()
+            opt.zero_grad()
+            
+            out = self.forward(batch)
+            losses = {task: self.criterion[task](out[task]) for task in self.tasks}
+            
+            loss = self._pcgrad_step(losses)
+            opt.step()
+            
+            # Step scheduler if it exists
+            sch = self.lr_schedulers()
+            if sch is not None:
+                sch.step()
+            
+            # Update metrics
+            self.train_loss(loss.detach())
+            for task, task_loss in losses.items():
+                self.train_losses[task](task_loss.detach())
+            
+            return loss.detach()
+        else:
+            # Standard forward pass
+            batch_out, losses, loss = self.model_step(batch,training=True)
+            
+            # Update metrics
+            self.train_loss(loss)
+            for task, task_loss in losses.items():
+                self.train_losses[task](task_loss)
+            
+            # For alternating strategy, update task index
+            if self.strategy == 'alternate':
+                self.current_task_idx = (self.current_task_idx + 1) % len(self.task_list)
+            
+            return loss
+    
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        """Called after training_step. Log metrics here."""
+        self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
+        for task in self.tasks:
+            self.log(
+                f"train/{task}/loss",
+                self.train_losses[task],
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                metric_attribute=f"train_losses.{task}"
+            )
+    
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
         pass
@@ -582,7 +714,7 @@ class MultiCOPTModule(LightningModule):
         :param batch: A batch of data from PyTorch Geometric.
         :param batch_idx: The index of the current batch.
         """
-        batch, losses, loss = self.model_step(batch)
+        batch, losses, loss = self.model_step(batch,training=False)
         self.val_loss(loss)
 
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
@@ -615,7 +747,7 @@ class MultiCOPTModule(LightningModule):
         :param batch: A batch of data from PyTorch Geometric.
         :param batch_idx: The index of the current batch.
         """
-        batch, losses, loss = self.model_step(batch)
+        batch, losses, loss = self.model_step(batch, training=False)
         self.test_loss(loss)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         for task,task_loss in losses.items():

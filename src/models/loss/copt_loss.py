@@ -138,7 +138,7 @@ def color_loss_pyg(data, beta = 0.001):
     #term3 = beta * color_usage.sum()
     #term3 = beta * X.max(dim=0).values.sum()
 
-    return  term1+term2 #+term3
+    return  (term1+term2)/1000 #+term3
 
 
 '''
