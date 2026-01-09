@@ -21,12 +21,12 @@ net:
   encoder:
     _target_: src.models.network.gnn.FeatureEncoder
     dim_in: 1
-    dim_hid: 32
+    dim_hid: ${model.net.dim_inner}
     node_encoder:
       _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
       dim_in: 1
-      dim_pe: 32
-      dim_emb: 32
+      dim_pe: ${model.net.dim_inner}
+      dim_emb: ${model.net.dim_inner}
       stat_list: ['degree', 'eccentricity', 'cluster_coefficient', 'triangle_count']
     node_encoder_bn: True
   layers_pre_mp: 1

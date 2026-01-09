@@ -241,7 +241,7 @@ class COPTTransferModule(COPTModule):
         metrics: Dict = None,
         labels: bool = False,
         compile: bool = False,
-        freeze_backbone: bool = True,
+        freeze: bool = False,
         reset_head: bool = True,
     ) -> None:
         """Initialize a `COPTTransferModule`.
@@ -261,8 +261,13 @@ class COPTTransferModule(COPTModule):
             randomly initialized. If False, pretrained head weights will be loaded. Defaults to True.
         """
         self._load_pretrained_weights(net, pretrain_path, reset_head=reset_head)
-        if freeze_backbone:
+        if freeze == 'backbone':
             self._freeze_backbone(net)
+        elif freeze == 'all':
+            for name, param in net.named_parameters():
+                param.requires_grad = False
+        elif freeze:
+            raise ValueError('freeze must be either False, "backbone" or "all"')
         
         super().__init__(
             net=net,

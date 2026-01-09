@@ -23,10 +23,12 @@ trainer:
 logger:
   wandb:
     tags: ${tags}
+    project: "COPT-MT [MIS]"
 
 model:
   optimizer:
-    _target_: torch.optim.Rprop
+    #_target_: torch.optim.Rprop
+    _target_: torch.optim.AdamW
   net:
     layers_pre_mp: 1
     layers_mp: 16

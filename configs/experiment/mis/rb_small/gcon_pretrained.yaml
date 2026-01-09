@@ -23,18 +23,20 @@ trainer:
 logger:
   wandb:
     tags: ${tags}
+    project: "COPT-MT [MIS]"
 
 model:
   _target_: src.models.copt_module.COPTTransferModule
-  pretrain_path: '/Users/semo/PycharmProjects/COPT-MT/logs/train/runs/2026-01-01_09-38-08/checkpoints/last.ckpt'
-  freeze_backbone: True
+  pretrain_path: '/home/mila/s/semih.canturk/COPT-MT/weights/mvc/GCON [1 post-MP] [1e-3]/checkpoints/epoch_224.ckpt'
+  freeze: 'backbone'
   reset_head: True
   optimizer:
-    _target_: torch.optim.Rprop
+    _target_: torch.optim.AdamW
   net:
     layers_pre_mp: 1
     layers_mp: 16
     layers_post_mp: 1
+    dim_inner: 32
     stage_type: 'stack'
     batch_norm: True
     l2_norm: False
@@ -50,3 +52,6 @@ model:
         _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
         stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
 
+callbacks:
+  early_stopping:
+    patience: 30

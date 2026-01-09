@@ -23,6 +23,7 @@ trainer:
 logger:
   wandb:
     tags: ${tags}
+    project: "COPT-MT [MIS]"
 
 model:
   net:

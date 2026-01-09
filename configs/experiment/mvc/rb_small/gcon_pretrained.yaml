@@ -28,7 +28,7 @@ model:
   _target_: src.models.copt_module.COPTTransferModule
   pretrain_path: '/home/mila/s/semih.canturk/COPT-MT/logs/train/runs/2026-01-01_09-38-08/checkpoints/last.ckpt'
   # pretrain_path: '/Users/semo/PycharmProjects/COPT-MT/logs/train/runs/2026-01-01_09-38-08/checkpoints/last.ckpt'
-  freeze_backbone: True
+  freeze: 'backbone'
   reset_head: True
   optimizer:
     #_target_: torch.optim.Rprop
