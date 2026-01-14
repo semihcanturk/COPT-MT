@@ -9,6 +9,9 @@ model:
   criterion:
     _target_: src.models.loss.copt_loss.maxclique_loss_pyg
     _partial_: True
+    alpha: 1.0
+    beta: 1.01
+    reduction: 'sum'
 
   metrics:
     size:

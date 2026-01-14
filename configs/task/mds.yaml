@@ -9,6 +9,8 @@ model:
   criterion:
     _target_: src.models.loss.copt_loss.mds_loss_pyg
     _partial_: True
+    beta: 1.0
+    reduction: 'sum'
 
   metrics:
     size:

@@ -13,7 +13,7 @@ def entropy(output, epsilon=1e-8):
 
 ### MAXCLIQUE ###
 
-def maxclique_loss_pyg(batch, beta=0.1):
+def maxclique_loss_old(batch, beta=0.1):
     data_list = batch.to_data_list()
 
     loss = 0.0
@@ -22,10 +22,37 @@ def maxclique_loss_pyg(batch, beta=0.1):
 
         loss1 = torch.sum(data.x[src] * data.x[dst])
         loss2 = data.x.sum() ** 2 - loss1 - torch.sum(data.x ** 2)
-        loss += (- loss1 + beta * loss2) * data.num_nodes
+        loss += (- loss1 + beta * loss2) / data.num_nodes
 
     return loss / batch.size(0)
 
+def maxclique_loss_pyg(batch, alpha=1.0, beta=1.01, reduction='sum'):
+    """
+    Loss for Maximum Independent Set based on the Hamiltonian H(X).
+    H(X) = -A * Sum(x_i) + B * Sum(x_i * x_j for edge (i,j))
+
+    Args:
+        alpha: Weight for the size reward.
+        beta: Weight for the violation penalty.
+              Constraint: beta should be > alpha to enforce valid sets.
+    """
+    data_list = batch.to_data_list()
+    loss = 0.0
+
+    for data in data_list:
+        size_term = -alpha * data.x.sum()
+
+        src, dst = data.edge_index
+
+        edge_penalty = (data.x.sum() ** 2 - torch.sum(data.x[src] * data.x[dst]) - torch.sum(data.x ** 2)) / 2
+        penalty_term = beta * edge_penalty
+
+        loss += (size_term + penalty_term) / data.num_nodes
+
+    if reduction == 'mean':
+        return loss / batch.size(0)
+    else:
+        return loss
 
 def maxclique_loss(output, data, beta=0.1):
     adj = data.get('adj')
@@ -108,7 +135,7 @@ def plantedclique_loss_pyg(data):
 
 ### MDS ###
 
-def mds_loss_pyg(data, beta=1.0):
+def mds_loss_pyg(data, beta=1.0, reduction='sum'):
     batch_size = data.batch.max() + 1.0
     
     p = data.x.squeeze()
@@ -123,7 +150,10 @@ def mds_loss_pyg(data, beta=1.0):
         ).exp() * (1 - p)
     ).sum()
 
-    return loss / batch_size
+    if reduction == 'mean':
+        return loss / batch_size
+    else:
+        return loss
 
 
 ### MIS ###
@@ -149,8 +179,8 @@ def mds_loss_pyg(data, beta=1.0):
 
 #     return loss #/ batch_size
 
-
-def mis_loss_pyg(batch, beta=0.1):
+# DO NOT USE THIS! USE 'mis_loss_pyg' below instead
+def mis_loss_old(batch, beta=0.1):
     data_list = batch.to_data_list()
 
     loss = 0.0
@@ -159,9 +189,57 @@ def mis_loss_pyg(batch, beta=0.1):
 
         loss1 = torch.sum(data.x[src] * data.x[dst])
         loss2 = data.x.sum() ** 2 - loss1 - torch.sum(data.x ** 2)
-        loss += (- loss2 + beta * loss1) * data.num_nodes
+        loss += (- loss2 + beta * loss1) / data.num_nodes
 
     return loss / batch.size(0)
+
+
+def mis_loss_pyg(batch, alpha=1.0, beta=1.01, reduction='sum'):
+    """
+    Loss for Maximum Independent Set based on the Hamiltonian H(X).
+    H(X) = -A * Sum(x_i) + B * Sum(x_i * x_j for edge (i,j))
+
+    Args:
+        alpha: Weight for the size reward.
+        beta: Weight for the violation penalty.
+              Constraint: beta should be > alpha to enforce valid sets.
+    """
+    data_list = batch.to_data_list()
+    loss = 0.0
+
+    for data in data_list:
+        size_term = -alpha * data.x.sum()
+
+        src, dst = data.edge_index
+        edge_penalty = torch.sum(data.x[src] * data.x[dst]) / 2
+        penalty_term = beta * edge_penalty
+
+        loss += (size_term + penalty_term) / data.num_nodes
+
+    if reduction == 'mean':
+        return loss / batch.size(0)
+    else:
+        return loss
+
+
+### Min Vertex Cover ###
+
+def mvc_loss(batch, alpha=1.0, beta=1.01, reduction='sum'):
+    assert beta > alpha, '`beta` must be larger than `alpha`'
+    data_list = batch.to_data_list()
+    loss = 0.0
+
+    for i, data in enumerate(data_list):
+        H_A = data.x.sum()
+        src, dst = data.edge_index
+        uncovered_prob = (1 - data.x[src]) * (1 - data.x[dst])
+        H_B = torch.sum(uncovered_prob)
+        loss += (alpha * H_A + beta * H_B) / data.num_nodes
+
+    if reduction == 'mean':
+        return loss / batch.size(0)
+    else:
+        return loss
 
 
 ### MAXBIPARTITE ###
