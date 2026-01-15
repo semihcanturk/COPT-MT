@@ -47,7 +47,7 @@ model:
     mis: 1
     color: 1
     cliquecover: 1
-  strategy: 'alternate' #sum OR alternate OR pcgrad
+  strategy: 'sum' #sum OR alternate OR pcgrad
   net:
     _target_: src.models.network.gnn.MultiHybridGNN
     dim_out:
@@ -73,13 +73,12 @@ model:
     act:
       _target_: torch.nn.LeakyReLU
       negative_slope: 0.3
-    # temporary fix for eccentricity (doesn't work with rb dataset)
     encoder:
       dim_hid: 64
       node_encoder:
         dim_pe: 64
         dim_emb: 64
-        stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
+        stat_list: ['degree', 'eccentricity', 'cluster_coefficient', 'triangle_count']
       node_encoder_bn: True
     finetuning:
       strategy :  #'linear_probing' or 'finetuning' or 'pre_post' (only freezes mp) or 'poly' or None
