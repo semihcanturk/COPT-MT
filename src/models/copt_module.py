@@ -497,8 +497,9 @@ class MultiCOPTModule(LightningModule):
         }
 
         # for tracking best so far validation accuracy
+        MIN_TASKS = ['mds','color']
         self.val_best_metrics = {
-            task: {name: MaxMetric() for name in task_metrics}
+            task: {name: (MinMetric() if task in MIN_TASKS else MaxMetric()) for name in task_metrics}
             for task, task_metrics in self.metrics.items()
         }
 
@@ -522,7 +523,6 @@ class MultiCOPTModule(LightningModule):
             for metric in task_metrics.values():
                 metric.reset()
 
-    '''
     def _pcgrad_step(self, losses: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Apply PCGrad to resolve conflicting gradients.
         
@@ -591,7 +591,6 @@ class MultiCOPTModule(LightningModule):
         
         # Return weighted average of losses for logging
         return sum(self.weights[task] * losses[task] for task in self.tasks)
-    '''
 
     def model_step(self, batch, training=True):
         """Perform a single model step on a batch of data.
