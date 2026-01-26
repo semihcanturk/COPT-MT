@@ -10,7 +10,7 @@ scheduler:
   _target_: src.models.optimizer.extra_optimizers.cosine_with_warmup_scheduler
   _partial_: True
   num_warmup_epochs: 50
-  max_epoch: 300
+  max_epoch: ${trainer.max_epochs}
 
 net:
   _target_: src.models.network.gnn.HybridGNN
@@ -29,6 +29,7 @@ net:
       dim_emb: ${model.net.dim_inner}
       stat_list: ['degree', 'eccentricity', 'cluster_coefficient', 'triangle_count']
     node_encoder_bn: True
+  conv_ffn: False
   layers_pre_mp: 1
   layers_mp: 20
   layers_post_mp: 1
@@ -36,6 +37,7 @@ net:
   batch_norm: True
   l2_norm: False
   final_l2_norm: False
+  gsn: False
   dropout: 0.3
   has_act: True
   act:

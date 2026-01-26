@@ -17,7 +17,7 @@ seed: 12345
 
 trainer:
   min_epochs: 10
-  max_epochs: 100
+  max_epochs: 200
   gradient_clip_val: 0.5
 
 logger:
@@ -29,10 +29,13 @@ model:
   optimizer:
     #_target_: torch.optim.Rprop
     _target_: torch.optim.AdamW
+  scheduler:
+    max_epoch: ${trainer.max_epochs}
   net:
     layers_pre_mp: 1
     layers_mp: 16
     layers_post_mp: 1
+    dim_inner: 64
     stage_type: 'stack'
     batch_norm: True
     l2_norm: False

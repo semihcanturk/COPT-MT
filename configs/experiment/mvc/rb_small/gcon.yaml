@@ -35,6 +35,7 @@ model:
     layers_pre_mp: 1
     layers_mp: 16
     layers_post_mp: 1
+    dim_inner: 64
     stage_type: 'stack'
     batch_norm: True
     l2_norm: False

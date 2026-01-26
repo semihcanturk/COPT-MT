@@ -49,5 +49,4 @@ model:
     final_l2_norm: False
     dropout: 0.3
     has_act: True
-    final_act: True
     act: 'relu'
