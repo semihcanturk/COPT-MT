@@ -3,34 +3,37 @@
 defaults:
   - override /data: rb_small.yaml
   - override /model: gcon.yaml
-  - override /task: mis.yaml
   - override /callbacks: default.yaml
+  - override /task: mvc.yaml
   - override /trainer: default.yaml
   - override /logger: wandb.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["mis", "rb", "small", "gcon"]
+tags: ["mvc", "rb", "small", "gcon"]
 
 seed: 12345
 
+data:
+  complement: True
+
 trainer:
   min_epochs: 10
-  max_epochs: 200
+  max_epochs: 300
   gradient_clip_val: 0.5
 
 logger:
   wandb:
     tags: ${tags}
-    project: "COPT-MT [MIS]"
 
 model:
   optimizer:
     #_target_: torch.optim.Rprop
     _target_: torch.optim.AdamW
-  scheduler:
-    max_epoch: ${trainer.max_epochs}
+    _partial_: True
+    lr: 0.0005
+    #weight_decay: 0.0
   net:
     layers_pre_mp: 1
     layers_mp: 16
@@ -40,6 +43,7 @@ model:
     batch_norm: True
     l2_norm: False
     final_l2_norm: False
+    gsn: False
     dropout: 0.3
     has_act: True
     act: 'gelu'
@@ -47,5 +51,11 @@ model:
       _target_: src.models.network.gnn.FeatureEncoder
       node_encoder:
         _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
-        stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
+        stat_list: ['degree', 'cluster_coefficient', 'triangle_count', 'degree_c', 'cluster_coefficient_c', 'triangle_count_c']
 
+callbacks:
+  model_checkpoint:
+    mode: 'min'
+  early_stopping:
+    mode: 'min'
+    patience: 200

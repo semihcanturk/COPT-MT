@@ -40,9 +40,7 @@ model:
     gsn: False
     dropout: 0.3
     has_act: True
-    act:
-      _target_: torch.nn.LeakyReLU
-      negative_slope: 0.3
+    act: 'gelu'
     encoder:
       _target_: src.models.network.gnn.FeatureEncoder
       node_encoder:
@@ -51,5 +49,5 @@ model:
 
 callbacks:
   early_stopping:
-    patience: 200
+    patience: 300
 
