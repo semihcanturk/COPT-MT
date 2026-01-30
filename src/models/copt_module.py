@@ -242,7 +242,9 @@ class COPTTransferModule(COPTModule):
         labels: bool = False,
         compile: bool = False,
         freeze: bool = False,
+        invert_head: bool = False,
         reset_head: bool = True,
+        reset_encoder: bool = False,
     ) -> None:
         """Initialize a `COPTTransferModule`.
 
@@ -260,9 +262,11 @@ class COPTTransferModule(COPTModule):
         :param reset_head: Whether to reset the head (post_mp) weights. If True, head will be
             randomly initialized. If False, pretrained head weights will be loaded. Defaults to True.
         """
-        self._load_pretrained_weights(net, pretrain_path, reset_head=reset_head)
+        self._load_pretrained_weights(net, pretrain_path, invert_head=invert_head, reset_head=reset_head, reset_encoder=reset_encoder)
         if freeze == 'backbone':
             self._freeze_backbone(net)
+        elif freeze == 'gnn_stack':
+            self._freeze_gnn_stack(net)
         elif freeze == 'all':
             for name, param in net.named_parameters():
                 param.requires_grad = False
@@ -280,7 +284,7 @@ class COPTTransferModule(COPTModule):
             compile=compile,
         )
 
-    def _load_pretrained_weights(self, net: torch.nn.Module, pretrain_path: str, reset_head: bool = True) -> None:
+    def _load_pretrained_weights(self, net: torch.nn.Module, pretrain_path: str, invert_head: bool = False, reset_head: bool = True, reset_encoder: bool = False) -> None:
         """Load pretrained weights from a checkpoint into the network.
         
         :param net: The network to load weights into.
@@ -314,16 +318,32 @@ class COPTTransferModule(COPTModule):
         if net_state_dict:
             model_dict = net.state_dict()
             # Filter out post_mp keys if resetting head
-            if reset_head:
-                filtered_pretrained_dict = {
-                    k: v for k, v in net_state_dict.items()
-                    if k in model_dict and not k.startswith('post_mp')
-                }
+            # Also skip gt_stack keys (new component, will be randomly initialized)
+            if invert_head:
+                filtered_pretrained_dict = {}
+                assert not (reset_head or reset_encoder)
+                for k, v in net_state_dict.items():
+                    if k.startswith('post_mp'):
+                        filtered_pretrained_dict[k] = -v
+                    else:
+                        filtered_pretrained_dict[k] = v
+            elif reset_head:
+                if reset_encoder:
+                    filtered_pretrained_dict = {
+                        k: v for k, v in net_state_dict.items()
+                        if k in model_dict and not k.startswith('encoder') and not k.startswith('pre_mp')
+                           and not k.startswith('post_mp') and not k.startswith('gt_stack')
+                    }
+                else:
+                    filtered_pretrained_dict = {
+                        k: v for k, v in net_state_dict.items()
+                        if k in model_dict and not k.startswith('post_mp') and not k.startswith('gt_stack')
+                    }
             else:
-                # Load all matching keys including post_mp
+                # Load all matching keys including post_mp, but skip gt_stack
                 filtered_pretrained_dict = {
                     k: v for k, v in net_state_dict.items()
-                    if k in model_dict
+                    if k in model_dict and not k.startswith('gt_stack')
                 }
             model_dict.update(filtered_pretrained_dict)
             net.load_state_dict(model_dict, strict=False)
@@ -331,12 +351,24 @@ class COPTTransferModule(COPTModule):
             raise ValueError(f"Could not extract network weights from checkpoint at {pretrain_path}")
 
     def _freeze_backbone(self, net: torch.nn.Module) -> None:
-        """Freeze all parameters except the output head (post_mp).
+        """Freeze backbone (encoder, pre_mp, mp), keep gt_stack and post_mp trainable.
         
         :param net: The network to freeze.
         """
         for name, param in net.named_parameters():
-            if not name.startswith('post_mp'):
+            # Keep gt_stack and post_mp trainable, freeze everything else (backbone)
+            if not (name.startswith('gt_stack') or name.startswith('post_mp')):
+                param.requires_grad = False
+
+    def _freeze_gnn_stack(self, net: torch.nn.Module) -> None:
+        """Freeze backbone (encoder, pre_mp, mp), keep gt_stack and post_mp trainable.
+
+        :param net: The network to freeze.
+        """
+        for name, param in net.named_parameters():
+            # Freeze only the GNN layers
+            if not ( name.startswith('encoder') or name.startswith('pre_mp')
+                     or name.startswith('gt_stack') or name.startswith('post_mp')):
                 param.requires_grad = False
 
 
