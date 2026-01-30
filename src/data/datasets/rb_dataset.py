@@ -11,11 +11,11 @@ from src.data.datasets.synthetic import SyntheticDataset
 
 
 class RBDataset(SyntheticDataset):
-    def __init__(self, root, name, n, na, k, num_samples, multiprocessing=False, num_workers=0, transform=None, pre_transform=None):
+    def __init__(self, root, name, n, na, k, num_samples, multiprocessing=False, num_workers=0, transform=None, pre_transform=None, complement=False):
         self.n = n
         self.na = na
         self.k = k
-        super().__init__(root, 'rb', name, num_samples, multiprocessing, num_workers, transform, pre_transform)
+        super().__init__(root, 'rb', name, num_samples, multiprocessing, num_workers, transform, pre_transform, complement)
 
     def gen_graph(self):
         na = np.random.randint(self.na[0], self.na[1])

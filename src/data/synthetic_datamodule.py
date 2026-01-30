@@ -20,7 +20,7 @@ from src.data.datasets.er_dataset import ERDataset
 from src.data.datasets.bp_dataset import BPDataset
 from src.data.datasets.pc_dataset import PCDataset
 from src.data.datasets.rb_dataset import RBDataset
-from src.transforms.graph_stats import ComputeGraphStats
+from src.transforms.graph_stats import ComputeGraphStats, ComputeComplementGraphStats
 from src.transforms.transforms import pre_transform_in_memory
 
 
@@ -241,7 +241,7 @@ class SyntheticDataModule(LightningDataModule):
         tf_list = [Constant(), partial(set_y, dataset_name=self.hparams.name, task=self.hparams.task, label=self.hparams.labels)]
 
         if self.hparams.graph_stats:
-            pre_tf_list.append(ComputeGraphStats(self.hparams.graph_stats, gsn=False))
+            pre_tf_list.append(ComputeComplementGraphStats(self.hparams.graph_stats, gsn=False))
 
         self.pre_transforms = Compose(pre_tf_list)
         self.pre_transforms_in_memory = Compose(tf_list)
