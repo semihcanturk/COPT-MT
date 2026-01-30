@@ -37,7 +37,8 @@ def main():
     # compute it via Maximum Independent Set (MIS), we use NetworkX's 
     # max_weight_clique on the complement graph which is much more efficient 
     # for this dataset's structure while still being exact.
-    
+
+    mc_sizes = []
     mvc_sizes = []
     mis_sizes = []
     for i in tqdm(range(len(test_set)), desc="Computing MVC"):
@@ -49,13 +50,17 @@ def main():
         # MIS(G) = Maximum Clique in Complement(G)
         complement_G = nx.complement(G)
         _, mis_size = nx.clique.max_weight_clique(complement_G, weight=None)
+        _, mc_size = nx.clique.max_weight_clique(G, weight=None)
+        mc_sizes.append(mc_size)
         
         mvc_size = G.number_of_nodes() - mis_size
         mvc_sizes.append(mvc_size)
         mis_sizes.append(mis_size)
-    
+
+    mean_mc = np.mean(mc_sizes)
     mean_mvc = np.mean(mvc_sizes)
     mean_mis = np.mean(mis_sizes)
+    print(f"\nMean Max Clique size: {mean_mc}")
     print(f"\nMean Minimum Vertex Cover size: {mean_mvc}")
     print(f"\nMean MIS size: {mean_mis}")
     return mean_mvc, mean_mis
