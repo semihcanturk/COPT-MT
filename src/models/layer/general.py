@@ -144,14 +144,16 @@ class Linear(torch.nn.Module):
 
 
 class LayerWrapper(torch.nn.Module):
-    def __init__(self, layer: torch.nn.Module, edge_attr: bool = False):
+    def __init__(self, layer: torch.nn.Module, edge_attr: bool = False, complement=False):
         super().__init__()
         self.layer = layer
         self.edge_attr = edge_attr
+        self.complement = complement
 
     def forward(self, batch):
         if self.edge_attr and hasattr(batch, 'edge_attr') and batch.edge_attr is not None:
             batch.x = self.layer(batch.x, batch.edge_index, batch.edge_attr)
         else:
-            batch.x = self.layer(batch.x, batch.edge_index)
+            edge_index = batch.edge_index_c if self.complement else batch.edge_index
+            batch.x = self.layer(batch.x, edge_index)
         return batch
