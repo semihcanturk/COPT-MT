@@ -1,0 +1,23 @@
+defaults:
+  - base
+
+net:
+  conv:
+    _target_: src.models.layer.general.LayerWrapper
+    complement: True
+    layer:
+      _target_: src.models.layer.gconconv.GCONConv
+      input_dim: ${model.net.dim_inner}
+      output_dim: ${model.net.dim_inner}
+      channel_list: [[0], [1], [2], [4], [0, 1], [1, 2], [2, 4]]
+      combine_fn: 'att_bias'
+      num_heads: 1
+      activation_att1: 'elu'
+      activation_att2: 'elu'
+      activation: 'elu'
+      depth_mlp: 1
+      skip: True
+      add_self_loops: True
+      norm: 'gcn'
+      filter_norm_dim: None
+      bias: False

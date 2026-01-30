@@ -26,9 +26,6 @@ logger:
     project: "COPT-MT [MIS]"
 
 model:
-  optimizer:
-    #_target_: torch.optim.Rprop
-    _target_: torch.optim.AdamW
   scheduler:
     max_epoch: ${trainer.max_epochs}
   net:

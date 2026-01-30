@@ -40,9 +40,7 @@ net:
   gsn: False
   dropout: 0.3
   has_act: True
-  act:
-    _target_: torch.nn.LeakyReLU
-    negative_slope: 0.3
+  act: 'relu'
   last_act: 'sigmoid'
   edge_decoding: 'concat'
   graph_pooling: 'add'

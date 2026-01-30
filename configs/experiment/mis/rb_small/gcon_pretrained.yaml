@@ -27,16 +27,14 @@ logger:
 
 model:
   _target_: src.models.copt_module.COPTTransferModule
-  pretrain_path: '/home/mila/s/semih.canturk/COPT-MT/weights/mvc/GCON [1 post-MP] [1e-3]/checkpoints/epoch_224.ckpt'
-  freeze: 'backbone'
-  reset_head: True
-  optimizer:
-    _target_: torch.optim.AdamW
+  pretrain_path: '/Users/semo/PycharmProjects/COPT-MT/weights/mis/GCON [1e-2] [1-4-1] [64dim]/checkpoints/last.ckpt' #'/home/mila/s/semih.canturk/COPT-MT/weights/mvc/GCON [1 post-MP] [1e-3]/checkpoints/epoch_224.ckpt'
+  freeze: 'all'
+  reset_head: False
   net:
     layers_pre_mp: 1
     layers_mp: 16
     layers_post_mp: 1
-    dim_inner: 32
+    dim_inner: 64
     stage_type: 'stack'
     batch_norm: True
     l2_norm: False
