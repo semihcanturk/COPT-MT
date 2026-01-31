@@ -23,7 +23,7 @@ trainer:
 logger:
   wandb:
     tags: ${tags}
-    project: "COPT-MT"
+    project: "COPT-MT [MVC]"
 
 model:
   scheduler:
@@ -34,9 +34,7 @@ model:
     layers_post_mp: 1
     dim_inner: 64
     stage_type: 'stack'
-    act:
-      _target_: torch.nn.LeakyReLU
-      negative_slope: 0.3
+    act: 'gelu'
     encoder:
       _target_: src.models.network.gnn.FeatureEncoder
       node_encoder:

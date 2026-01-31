@@ -23,6 +23,7 @@ trainer:
 logger:
   wandb:
     tags: ${tags}
+    project: "COPT-MT [MVC]"
 
 model:
   net:
@@ -35,9 +36,7 @@ model:
     final_l2_norm: False
     dropout: 0.3
     has_act: True
-    act:
-      _target_: torch.nn.LeakyReLU
-      negative_slope: 0.3
+    act: 'gelu'
     encoder:
       _target_: src.models.network.gnn.FeatureEncoder
       node_encoder:

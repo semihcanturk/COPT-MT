@@ -1,16 +1,25 @@
 # @package _global_
 
+trainer:
+  max_epochs: 300
+
 data:
   task: 'mvc'
 
 model:
   task: 'mvc'
 
+  optimizer:
+    _target_: torch.optim.AdamW
+    lr: 0.0005
+    weight_decay: 0.0
+
   criterion:
     _target_: src.models.loss.copt_loss.mvc_loss
     _partial_: True
     alpha: 1.0
     beta: 1.01
+    reduction: 'sum'
 
   metrics:
     size:
@@ -25,3 +34,4 @@ callbacks:
     mode: 'min'
   early_stopping:
     mode: 'min'
+    patience: 200

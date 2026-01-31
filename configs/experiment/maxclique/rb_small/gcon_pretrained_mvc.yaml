@@ -2,8 +2,8 @@
 
 defaults:
   - override /data: rb_small.yaml
-  - override /model: gin.yaml
-  - override /task: mvc.yaml
+  - override /model: gcon.yaml
+  - override /task: maxclique.yaml
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
   - override /logger: wandb.yaml
@@ -11,7 +11,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["mvc", "rb", "small", "gin"]
+tags: ["maxclique", "rb", "small", "gcon"]
 
 seed: 12345
 
@@ -23,13 +23,22 @@ trainer:
 logger:
   wandb:
     tags: ${tags}
-    project: "COPT-MT [MVC]"
+    project: "COPT-MT [MaxClique]"
 
 model:
+  _target_: src.models.copt_module.COPTTransferModule
+  pretrain_path: '/home/mila/s/semih.canturk/COPT-MT/weights/mvc/GCON/checkpoints/epoch_291.ckpt'
+  freeze: 'backbone'
+  reset_head: True
+  optimizer:
+    _target_: torch.optim.AdamW
+  scheduler:
+    max_epoch: ${trainer.max_epochs}
   net:
     layers_pre_mp: 1
     layers_mp: 16
     layers_post_mp: 1
+    dim_inner: 32
     stage_type: 'stack'
     batch_norm: True
     l2_norm: False
@@ -42,4 +51,3 @@ model:
       node_encoder:
         _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
         stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
-

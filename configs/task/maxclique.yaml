@@ -6,6 +6,11 @@ data:
 model:
   task: 'maxclique'
 
+  optimizer:
+    _target_: torch.optim.AdamW
+    lr: 0.001
+    weight_decay: 0.0
+
   criterion:
     _target_: src.models.loss.copt_loss.maxclique_loss_pyg
     _partial_: True
