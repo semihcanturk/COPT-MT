@@ -1,0 +1,13 @@
+_target_: src.data.frb_datamodule.FRBDataModule
+data_dir: ${paths.data_dir}
+name: '30-15'
+task: 'mis'
+batch_size: 16  # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+labels: False
+graph_stats: null #['degree', 'cluster_coefficient', 'triangle_count']
+num_workers: 0
+pin_memory: False
+
+# Optional transforms to apply to the data
+# By default, NormalizeFeatures is always applied
+transforms: null
