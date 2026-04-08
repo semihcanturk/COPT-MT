@@ -14,9 +14,9 @@ model:
 
   metrics:
     size:
-      _target_: src.utils.metrics.mds_size_pyg
+      _target_: src.utils.metrics.mds_size_pyg_parallel
       _partial_: True
-      num_seeds: 1
+      num_seeds: 10
 
 callbacks:
   model_checkpoint:

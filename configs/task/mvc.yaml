@@ -23,11 +23,11 @@ model:
 
   metrics:
     size:
-      _target_: src.utils.metrics.mvc_size_pyg
+      _target_: src.utils.metrics.mvc_size_pyg_parallel
       _partial_: True
-      num_seeds: 3
+      num_seeds: 10
       enable: True
-      test: False
+      # test: False
 
 callbacks:
   model_checkpoint:
@@ -35,3 +35,7 @@ callbacks:
   early_stopping:
     mode: 'min'
     patience: 200
+
+#logger:
+#  wandb:
+#    project: "COPT-MT [MVC]"
