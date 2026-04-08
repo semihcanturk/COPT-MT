@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH --partition=long
+#SBATCH --cpus-per-task=8
+#SBATCH --gres=gpu:80gb:1
+#SBATCH --nodes=1
+#SBATCH --mem=256G
+set -e
+
+date
+hostname
+pwd
+
+source .venv/bin/activate
+
+echo $@
+eval $@
+
+
+echo "All done in sbatch."
+date
