@@ -86,7 +86,7 @@ class COPTModule(LightningModule):
 
         # for tracking best so far validation accuracy
         BestMetric = MinMetric if task in ['mds', 'mvc'] else MaxMetric
-        self.val_best_metrics = {name: BestMetric() for name in metrics}
+        self.val_best_metrics = {name: BestMetric() if 'violations' not in name else MinMetric() for name in metrics}
 
     def forward(self, batch):
         """Perform a forward pass through the model `self.net`.
@@ -166,11 +166,12 @@ class COPTModule(LightningModule):
             self.log(f"val/{name}_best", self.val_best_metrics[name].compute(), sync_dist=True,
                      prog_bar=(name == "size"))
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
         """Perform a single test step on a batch of data from the test set.
 
         :param batch: A batch of data from PyTorch Geometric.
         :param batch_idx: The index of the current batch.
+        :param dataloader_idx: Index of the current dataloader (for multiple test dataloaders).
         """
         batch, loss = self.model_step(batch)
         self.test_loss(loss)
@@ -219,6 +220,157 @@ class COPTModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
+
+
+class COPTTransferModule(COPTModule):
+    """LightningModule for transfer learning with pretrained GNN/HybridGNN models.
+
+    This module loads a pretrained GNN/HybridGNN from a checkpoint and freezes
+    all parameters except the output head (post_mp/GNNHead) for transfer learning.
+
+    This module can be used for both graph-level and node-level tasks.
+    """
+
+    def __init__(
+        self,
+        net: torch.nn.Module,
+        pretrain_path: str,
+        criterion: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler,
+        task: str,
+        metrics: Dict = None,
+        labels: bool = False,
+        compile: bool = False,
+        freeze: bool = False,
+        invert_head: bool = False,
+        reset_head: bool = True,
+        reset_encoder: bool = False,
+    ) -> None:
+        """Initialize a `COPTTransferModule`.
+
+        :param net: The model to train (GNN or HybridGNN). Will be loaded with pretrained weights.
+        :param pretrain_path: Path to the pretrained checkpoint file.
+        :param criterion: The loss function.
+        :param optimizer: The optimizer to use for training.
+        :param scheduler: The learning rate scheduler to use for training.
+        :param task: The task type, either "graph" or "node". Defaults to "graph".
+        :param metrics: Dictionary of metrics to compute.
+        :param labels: Whether labels are provided. Defaults to False.
+        :param compile: Whether to compile the model. Defaults to False.
+        :param freeze_backbone: Whether to freeze the backbone (everything except post_mp).
+            Defaults to True.
+        :param reset_head: Whether to reset the head (post_mp) weights. If True, head will be
+            randomly initialized. If False, pretrained head weights will be loaded. Defaults to True.
+        """
+        self._load_pretrained_weights(net, pretrain_path, invert_head=invert_head, reset_head=reset_head, reset_encoder=reset_encoder)
+        if freeze == 'backbone':
+            self._freeze_backbone(net)
+        elif freeze == 'gnn_stack':
+            self._freeze_gnn_stack(net)
+        elif freeze == 'all':
+            for name, param in net.named_parameters():
+                param.requires_grad = False
+        elif freeze:
+            raise ValueError('freeze must be either False, "backbone" or "all"')
+        
+        super().__init__(
+            net=net,
+            criterion=criterion,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            task=task,
+            metrics=metrics,
+            labels=labels,
+            compile=compile,
+        )
+
+    def _load_pretrained_weights(self, net: torch.nn.Module, pretrain_path: str, invert_head: bool = False, reset_head: bool = True, reset_encoder: bool = False) -> None:
+        """Load pretrained weights from a checkpoint into the network.
+        
+        :param net: The network to load weights into.
+        :param pretrain_path: Path to the checkpoint file.
+        :param reset_head: If True, exclude post_mp weights to allow head reset. If False, load all weights.
+        """
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        checkpoint = torch.load(pretrain_path, map_location=device, weights_only=False)
+        
+        if 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+        else:
+            state_dict = checkpoint
+        
+        net_state_dict = {}
+        for key, value in state_dict.items():
+            if key.startswith('net.'):
+                # Remove 'net.' prefix
+                new_key = key[4:]  # Remove 'net.' prefix
+                net_state_dict[new_key] = value
+        
+        # If no 'net.' prefix found, try direct matching
+        if not net_state_dict:
+            # Try to match keys directly
+            model_keys = set(net.state_dict().keys())
+            for key, value in state_dict.items():
+                if key in model_keys:
+                    net_state_dict[key] = value
+        
+        if net_state_dict:
+            model_dict = net.state_dict()
+            # Filter out post_mp keys if resetting head
+            # Also skip gt_stack keys (new component, will be randomly initialized)
+            if invert_head:
+                filtered_pretrained_dict = {}
+                assert not (reset_head or reset_encoder)
+                for k, v in net_state_dict.items():
+                    if k.startswith('post_mp'):
+                        filtered_pretrained_dict[k] = -v
+                    else:
+                        filtered_pretrained_dict[k] = v
+            elif reset_head:
+                if reset_encoder:
+                    filtered_pretrained_dict = {
+                        k: v for k, v in net_state_dict.items()
+                        if k in model_dict and not k.startswith('encoder') and not k.startswith('pre_mp')
+                           and not k.startswith('post_mp') and not k.startswith('gt_stack')
+                    }
+                else:
+                    filtered_pretrained_dict = {
+                        k: v for k, v in net_state_dict.items()
+                        if k in model_dict and not k.startswith('post_mp') and not k.startswith('gt_stack')
+                    }
+            else:
+                # Load all matching keys including post_mp, but skip gt_stack
+                filtered_pretrained_dict = {
+                    k: v for k, v in net_state_dict.items()
+                    if k in model_dict and not k.startswith('gt_stack')
+                }
+            model_dict.update(filtered_pretrained_dict)
+            net.load_state_dict(model_dict, strict=False)
+        else:
+            raise ValueError(f"Could not extract network weights from checkpoint at {pretrain_path}")
+
+    def _freeze_backbone(self, net: torch.nn.Module) -> None:
+        """Freeze backbone (encoder, pre_mp, mp), keep gt_stack and post_mp trainable.
+        
+        :param net: The network to freeze.
+        """
+        for name, param in net.named_parameters():
+            # Keep gt_stack and post_mp trainable, freeze everything else (backbone)
+            if not (name.startswith('gt_stack') or name.startswith('post_mp')):
+                param.requires_grad = False
+
+    def _freeze_gnn_stack(self, net: torch.nn.Module) -> None:
+        """Freeze backbone (encoder, pre_mp, mp), keep gt_stack and post_mp trainable.
+
+        :param net: The network to freeze.
+        """
+        for name, param in net.named_parameters():
+            # Freeze only the GNN layers
+            if not ( name.startswith('encoder') or name.startswith('pre_mp')
+                     or name.startswith('gt_stack') or name.startswith('post_mp')):
+                param.requires_grad = False
 
 
 if __name__ == "__main__":

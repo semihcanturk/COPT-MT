@@ -1,0 +1,32 @@
+# @package _global_
+
+trainer:
+  max_epochs: 200
+
+data:
+  task: 'mis'
+
+model:
+  task: 'mis'
+
+  optimizer:
+    _target_: torch.optim.AdamW
+    lr: 0.0005
+    weight_decay: 0.0
+
+  criterion:
+    _target_: src.models.loss.copt_loss.mis_loss_pyg
+    _partial_: True
+    alpha: 1.0
+    beta: 1.01
+    reduction: 'sum'
+
+  metrics:
+    size:
+      _target_: src.utils.metrics.mis_size_pyg
+      _partial_: True
+      num_seeds: 10
+
+callbacks:
+  early_stopping:
+    patience: 50

@@ -17,8 +17,7 @@ def accuracy(output, target):
 ### MAXCLIQUE ###
 
 def maxclique_size_pyg(batch, dec_length=300, num_seeds=1):
-    batch = maxclique_decoder_pyg(batch, dec_length=dec_length,
-                                  num_seeds=num_seeds)
+    batch = maxclique_decoder_pyg_parallel(batch, dec_length=dec_length, num_seeds=num_seeds)
 
     data_list = batch.to_data_list()
 
@@ -28,8 +27,7 @@ def maxclique_size_pyg(batch, dec_length=300, num_seeds=1):
 
 
 def maxclique_ratio_pyg(batch, dec_length=300, num_seeds=1):
-    batch = maxclique_decoder_pyg(batch, dec_length=dec_length,
-                                  num_seeds=num_seeds)
+    batch = maxclique_decoder_pyg_parallel(batch, dec_length=dec_length, num_seeds=num_seeds)
 
     data_list = batch.to_data_list()
 
@@ -104,18 +102,52 @@ def maxclique_decoder_pyg(batch, dec_length=300, num_seeds=1):
     return Batch.from_data_list(data_list)
 
 
-def maxclique_decoder_pyg_parallel(batch, dec_length=300, num_seeds=1, num_workers=1):
+def maxclique_decoder_pyg_parallel(batch, dec_length=300, num_seeds=1):
+    """
+    Optimized parallel decoder that processes all seeds simultaneously using vectorized operations.
+    This avoids multiprocessing overhead and leverages PyTorch's native parallelization.
+    """
     data_list = batch.to_data_list()
 
     for data in data_list:
-        t0 = time.time()
-        with torch.multiprocessing.Pool(processes=num_workers) as pool:
-            c_size_list = pool.map(
-                partial(get_csize, data=data, dec_length=dec_length),
-                range(num_seeds))
-        data.c_size = max(c_size_list)
-        t1 = time.time()
-        print(t1 - t0)
+        order = torch.argsort(data.x, dim=0, descending=True).squeeze()
+
+        edge_index = remove_self_loops(data.edge_index)[0]
+        src, dst = edge_index[0], edge_index[1]
+        num_nodes = data.num_nodes
+        max_idx = min(dec_length, num_nodes)
+        device = data.x.device
+        
+        c = torch.zeros(num_seeds, num_nodes, dtype=torch.float32, device=device)
+        seed_positions = torch.arange(num_seeds, device=device)
+        seed_positions = torch.clamp(seed_positions, max=max_idx - 1)
+        c[torch.arange(num_seeds, device=device), order[seed_positions]] = 1.0
+
+        for idx in range(max_idx):
+            # A seed considers node idx if idx >= seed_position[seed]
+            active_seeds = idx >= seed_positions
+            
+            if not active_seeds.any():
+                continue
+            
+            node_idx = order[idx]
+
+            c_temp = c.clone()
+            c_temp[active_seeds, node_idx] = 1.0
+            c_sum = c_temp.sum(dim=1)
+            
+            c_src = c_temp[:, src]
+            c_dst = c_temp[:, dst]
+            cTWc = (c_src * c_dst).sum(dim=1)
+            c_sq_sum = (c_temp ** 2).sum(dim=1)
+            
+            # For a valid clique, c.sum()^2 - cTWc - torch.sum(c^2) = 0
+            validity = c_sum ** 2 - cTWc - c_sq_sum
+            valid_mask = (torch.abs(validity) < 1e-6) & active_seeds
+            c[valid_mask, node_idx] = 1.0
+        
+        c_sizes = c.sum(dim=1)
+        data.c_size = c_sizes.max().item()
 
     return Batch.from_data_list(data_list)
 
@@ -265,7 +297,7 @@ def mds_size_pyg(data, num_seeds: int = 1, enable: bool = True, test: bool = Fal
             t0 = time.time()
             while not is_ds(ds, row, col):
                 if torch.max(p) == - torch.inf:
-                    break   # break in case skipping top nodes prohibits finding a ds; should prevent infinite loops
+                    break   # Break in case skipping top nodes prohibits finding a ds; should prevent infinite loops
 
                 idx = torch.argmax(p)
                 ds[idx] = True
@@ -274,11 +306,130 @@ def mds_size_pyg(data, num_seeds: int = 1, enable: bool = True, test: bool = Fal
             if is_ds(ds, row, col):
                 mds_size_list.append(ds.sum())
             else:
-                mds_size_list.append(len(p))    # this case should rarely happen (only if break is triggered above). But let's be conservative just in case and set the ds to the entire node set
+                # This case should rarely happen (only if break is triggered above).
+                # But let's be conservative just in case and set the ds to the entire node set
+                mds_size_list.append(len(p))
 
         ds_list.append(min(mds_size_list))
 
     return torch.Tensor(ds_list).mean()
+
+
+def mds_size_pyg_parallel(data, num_seeds: int = 1, enable: bool = True):
+    """
+    Optimized parallel version that processes all seeds simultaneously using vectorized operations.
+    Computes the Minimum Dominating Set size baseline using a greedy strategy guided by model scores (data.x).
+    """
+    if not enable:
+        return torch.tensor(float('nan'))
+
+    data_list = data.to_data_list()
+
+    ds_list = []
+
+    for graph in data_list:
+        edge_index = add_self_loops(graph.edge_index)[0]
+        row, col = edge_index[0], edge_index[1]
+        num_nodes = graph.x.size(0)
+        device = graph.x.device
+
+        ds = torch.zeros(num_seeds, num_nodes, dtype=torch.bool, device=device)
+        p = graph.x.squeeze().unsqueeze(0).expand(num_seeds, -1).clone()  # [num_seeds, num_nodes]
+
+        for skip in range(num_seeds):
+            if skip > 0:
+                p_seed = p[skip].clone()
+                for _ in range(skip):
+                    if torch.max(p_seed) == -torch.inf:
+                        break
+                    idx = torch.argmax(p_seed)
+                    p_seed[idx] = -torch.inf
+                p[skip] = p_seed
+
+        def is_ds_batch(ds_batch, row, col):
+            """Check dominating set validity for all seeds in parallel."""
+            if row.numel() == 0:
+                return torch.ones(ds_batch.size(0), dtype=torch.bool, device=ds_batch.device)
+            
+            # ds_batch: [num_seeds, num_nodes]
+            # For each node, check if it's dominated (has a neighbor in ds or is in ds itself)
+            # Using scatter: for each node, sum up if any of its neighbors (or itself) are in ds
+            num_seeds_batch = ds_batch.size(0)
+            num_nodes_batch = ds_batch.size(1)
+            
+            # Float for scatter op
+            ds_float = ds_batch.float()
+            
+            # Expand row and col for batch processing
+            # row: [num_edges], col: [num_edges]
+            # We need to scatter for each seed: ds_float[:, row] gives [num_seeds, num_edges]
+            ds_at_edges = ds_float[:, row]  # [num_seeds, num_edges]
+            
+            # Reshape for scatter: flatten seeds and edges, then reshape back
+            # scatter expects 1D index, so we need to offset indices for each seed
+            # Create offset indices: seed_idx * num_nodes_batch for each seed
+            seed_offsets = torch.arange(num_seeds_batch, device=device).unsqueeze(1) * num_nodes_batch  # [num_seeds, 1]
+            col_offset = col.unsqueeze(0) + seed_offsets  # [num_seeds, num_edges]
+            
+            # Flatten for scatter
+            ds_flat = ds_at_edges.flatten()  # [num_seeds * num_edges]
+            col_flat = col_offset.flatten()  # [num_seeds * num_edges]
+            
+            # Scatter: aggregate for each (seed, node) pair
+            agg_flat = scatter(ds_flat, index=col_flat, dim_size=num_seeds_batch * num_nodes_batch, reduce='sum')
+            agg = agg_flat.view(num_seeds_batch, num_nodes_batch)  # [num_seeds, num_nodes]
+            
+            # Check if all nodes are visited (dominated) for each seed
+            visited = agg >= 1.0  # [num_seeds, num_nodes]
+            valid_mask = visited.all(dim=1)  # [num_seeds]
+            
+            return valid_mask
+
+        # Greedy loop: continue until all seeds have valid dominating sets
+        max_iterations = num_nodes  # Safety limit
+        iteration = 0
+        
+        while iteration < max_iterations:
+            # Check which seeds still need more nodes
+            ds_valid = is_ds_batch(ds, row, col)  # [num_seeds]
+            
+            if ds_valid.all():
+                break
+            
+            # For seeds that are not yet valid, find the next node to add
+            p_masked = p.clone()
+            # Set probabilities to -inf for nodes already in the dominating set
+            p_masked[ds] = -torch.inf
+            
+            # For seeds that are already valid, set all to -inf so they don't add more nodes
+            p_masked[ds_valid.unsqueeze(1).expand(-1, num_nodes)] = -torch.inf
+            
+            # Find the next node to add for each seed using vectorized argmax
+            max_vals, next_nodes = p_masked.max(dim=1)  # [num_seeds], [num_seeds]
+            active_seeds = (max_vals > -torch.inf) & (~ds_valid)  # [num_seeds]
+            
+            if not active_seeds.any():
+                break
+            
+            # Add the selected nodes to the dominating sets for active seeds
+            ds[active_seeds, next_nodes[active_seeds]] = True
+            
+            # Update probabilities: set selected nodes to -inf for active seeds
+            p[active_seeds, next_nodes[active_seeds]] = -torch.inf
+            
+            iteration += 1
+
+        # Final check and compute sizes
+        ds_valid = is_ds_batch(ds, row, col)  # [num_seeds]
+        ds_sizes = ds.sum(dim=1).float()  # [num_seeds]
+        
+        # For seeds that didn't find a valid DS, use num_nodes as fallback
+        ds_sizes[~ds_valid] = num_nodes
+        
+        best_ds_size_for_graph = ds_sizes.min().item()
+        ds_list.append(best_ds_size_for_graph)
+
+    return torch.tensor(ds_list, dtype=float).mean()
 
 
 def mds_acc_pyg(data):
@@ -309,8 +460,8 @@ def mds_acc_pyg(data):
 
 ### MIS ###
 
-def mis_size_pyg(batch, dec_length=300, num_seeds=1):
-    batch = mis_decoder_pyg(batch, dec_length=dec_length, num_seeds=num_seeds)
+def mis_size_pyg(batch, dec_length=300, num_seeds=1, complement=False):
+    batch = mis_decoder_pyg_parallel(batch, dec_length=dec_length, num_seeds=num_seeds, complement=complement)
 
     data_list = batch.to_data_list()
 
@@ -346,6 +497,296 @@ def mis_decoder_pyg(batch, dec_length=300, num_seeds=1):
         data.is_size = max(is_size_list)
 
     return Batch.from_data_list(data_list)
+
+
+def mis_decoder_pyg_parallel(batch, dec_length=300, num_seeds=1, complement=False):
+    """
+    Optimized parallel decoder that processes all seeds simultaneously using vectorized operations.
+    This avoids sequential processing and leverages PyTorch's native parallelization.
+    """
+    data_list = batch.to_data_list()
+
+    for data in data_list:
+        order = torch.argsort(data.x, dim=0, descending=True).squeeze()
+        edge_index = data.edge_index_c if complement else data.edge_index
+        edge_index = remove_self_loops(edge_index)[0]
+        src, dst = edge_index[0], edge_index[1]
+        num_nodes = data.num_nodes
+        max_idx = min(dec_length, num_nodes)
+        device = data.x.device
+        
+        # Initialize independent set masks for all seeds: [num_seeds, num_nodes]
+        c = torch.zeros(num_seeds, num_nodes, dtype=torch.float32, device=device)
+        
+        # Initialize seed positions: each seed starts at a different position
+        seed_positions = torch.arange(num_seeds, device=device)
+        seed_positions = torch.clamp(seed_positions, max=max_idx - 1)
+        
+        # Set initial node for each seed
+        c[torch.arange(num_seeds, device=device), order[seed_positions]] = 1.0
+        
+        # Process nodes in order for all seeds simultaneously
+        for idx in range(max_idx):
+            # Determine which seeds should consider this node
+            # A seed considers node idx if idx >= seed_position[seed]
+            active_seeds = idx >= seed_positions
+            
+            if not active_seeds.any():
+                continue
+            
+            # For active seeds, try adding this node
+            node_idx = order[idx]
+            
+            # Temporarily add node_idx to all active seeds
+            # For MIS, we check if cTWc == 0 (no edges between selected nodes)
+            c_temp = c.clone()
+            c_temp[active_seeds, node_idx] = 1.0
+            
+            # Compute cTWc for all seeds in parallel using batched operations
+            # cTWc[seed] = sum(c_temp[seed, src] * c_temp[seed, dst])
+            # If cTWc != 0, there are edges between selected nodes, so it's not an independent set
+            c_src = c_temp[:, src]  # [num_seeds, num_edges]
+            c_dst = c_temp[:, dst]  # [num_seeds, num_edges]
+            cTWc = (c_src * c_dst).sum(dim=1)  # [num_seeds]
+            
+            # Valid if cTWc == 0 (no edges between selected nodes)
+            valid_mask = (cTWc == 0) & active_seeds  # [num_seeds]
+            
+            # Update c only for seeds where the node addition is valid
+            c[valid_mask, node_idx] = 1.0
+        
+        # Compute independent set sizes for all seeds
+        c_sizes = c.sum(dim=1)  # [num_seeds]
+        data.is_size = c_sizes.max().item()
+
+    return Batch.from_data_list(data_list)
+
+
+def mis_size_threshold_pyg(batch, threshold=0.5):
+    """
+    Simple threshold-based MIS decoder (no feasibility enforcement).
+    Mirrors the Amazon co-with-gnns-example postprocessing: threshold at given
+    value, report size and violation count as-is without fixing violations.
+
+    Returns mean IS size across the batch (may include infeasible solutions).
+    """
+    data_list = batch.to_data_list()
+
+    size_list = []
+    for data in data_list:
+        bitstring = (data.x.squeeze() >= threshold).float()
+        size_list.append(bitstring.sum().item())
+
+    return torch.tensor(size_list).mean()
+
+
+def mis_violations_threshold_pyg(batch, threshold=0.5):
+    """
+    Count independence violations for a threshold-based decoder.
+    A violation is an edge (u,v) where both u and v are selected.
+    """
+    data_list = batch.to_data_list()
+
+    violation_list = []
+    for data in data_list:
+        bitstring = (data.x.squeeze() >= threshold).float()
+        edge_index = remove_self_loops(data.edge_index)[0]
+        src, dst = edge_index[0], edge_index[1]
+        violations = (bitstring[src] * bitstring[dst]).sum().item() / 2
+        violation_list.append(violations)
+
+    return torch.tensor(violation_list).mean()
+
+
+### Min Vertex Cover ###
+
+def is_vc(mask, edge_index):
+    """
+    Checks if the boolean mask corresponds to a valid Vertex Cover.
+    A set is a VC if for every edge (u, v), u is in Set OR v is in Set.
+    """
+    if edge_index.numel() == 0:  # Handle empty graph case
+        return True
+
+    row, col = edge_index
+    # Get boolean of whether the edge endpoints are in the mask
+    row_selected = mask[row]
+    col_selected = mask[col]
+
+    # An edge is covered if EITHER endpoint is selected
+    edge_covered = row_selected | col_selected
+
+    return edge_covered.all()
+
+
+def mvc_size_pyg(data, num_seeds: int = 1, enable: bool = True, test: bool = False):
+    """
+    Computes the Minimum Vertex Cover size baseline using a greedy strategy
+    guided by model scores (data.x).
+    """
+    if not test:
+        num_seeds = 1
+        if not enable:
+            return torch.tensor(float('nan'))
+
+    data_list = data.to_data_list()
+
+    vc_size_list_batch = []
+
+    for graph in data_list:
+        # CHANGE 1: We use the original edge_index.
+        # No need for add_self_loops for MVC checks.
+        edge_index = graph.edge_index
+
+        # Determine number of nodes from features x
+        num_nodes = graph.x.size(0)
+
+        best_vc_size_for_graph = float('inf')
+
+        # CHANGE 2: If the graph has no edges, the Min Vertex Cover is empty (size 0).
+        if edge_index.numel() == 0:
+            vc_size_list_batch.append(0)
+            continue
+
+        for skip in range(num_seeds):
+            # vc will be a boolean mask of selected nodes
+            vc = torch.zeros(num_nodes, dtype=torch.bool, device=graph.x.device)
+            p = deepcopy(graph.x).squeeze()
+
+            # Skip Logic (Same as MDS)
+            if skip > 0:
+                for _ in range(skip):
+                    # If p is all -inf, we can't skip anymore
+                    if torch.max(p) == -float('inf'):
+                        break
+                    idx = torch.argmax(p)
+                    p[idx] = -float('inf')
+
+            # Greedy Loop
+            # CHANGE 3: The condition is now based on Edge Coverage
+            while not is_vc(vc, edge_index):
+                if torch.max(p) == -float('inf'):
+                    break  # Should not happen unless graph is disconnected/weird states
+
+                idx = torch.argmax(p)
+                vc[idx] = True
+                p[idx] = -float('inf')
+
+            # Verify and Record
+            if is_vc(vc, edge_index):
+                best_vc_size_for_graph = min(best_vc_size_for_graph, vc.sum().item())
+            else:
+                # Fallback: if loop broke without finding VC, take all nodes (valid VC)
+                best_vc_size_for_graph = min(best_vc_size_for_graph, num_nodes)
+
+        vc_size_list_batch.append(best_vc_size_for_graph)
+
+    return torch.tensor(vc_size_list_batch, dtype=float).mean()
+
+
+def mvc_size_pyg_parallel(data, num_seeds: int = 1, enable: bool = True):
+    """
+    Optimized parallel version that processes all seeds simultaneously using vectorized operations.
+    Computes the Minimum Vertex Cover size baseline using a greedy strategy guided by model scores (data.x).
+    """
+    # if not test:
+    #     num_seeds = 1
+    if not enable:
+        return torch.tensor(float('nan'))
+
+    data_list = data.to_data_list()
+
+    vc_size_list_batch = []
+
+    for graph in data_list:
+        edge_index = graph.edge_index
+        num_nodes = graph.x.size(0)
+        device = graph.x.device
+
+        # If the graph has no edges, the Min Vertex Cover is empty (size 0).
+        if edge_index.numel() == 0:
+            vc_size_list_batch.append(0)
+            continue
+
+        row, col = edge_index[0], edge_index[1]
+
+        # Initialize vertex cover masks for all seeds: [num_seeds, num_nodes]
+        vc = torch.zeros(num_seeds, num_nodes, dtype=torch.bool, device=device)
+        
+        # Initialize probability vectors for all seeds: [num_seeds, num_nodes]
+        p = graph.x.squeeze().unsqueeze(0).expand(num_seeds, -1).clone()  # [num_seeds, num_nodes]
+
+        # Skip logic: for each seed, skip the top 'skip' nodes
+        for skip in range(num_seeds):
+            if skip > 0:
+                p_seed = p[skip].clone()
+                for _ in range(skip):
+                    if torch.max(p_seed) == -float('inf'):
+                        break
+                    idx = torch.argmax(p_seed)
+                    p_seed[idx] = -float('inf')
+                p[skip] = p_seed
+
+        # Vectorized vertex cover check function
+        def is_vc_batch(vc_batch, row, col):
+            """Check vertex cover validity for all seeds in parallel."""
+            if row.numel() == 0:
+                return torch.ones(vc_batch.size(0), dtype=torch.bool, device=vc_batch.device)
+            
+            # vc_batch: [num_seeds, num_nodes]
+            # For each edge, check if either endpoint is in the cover
+            row_selected = vc_batch[:, row]  # [num_seeds, num_edges]
+            col_selected = vc_batch[:, col]  # [num_seeds, num_edges]
+            edge_covered = row_selected | col_selected  # [num_seeds, num_edges]
+            
+            # All edges must be covered for a valid VC
+            return edge_covered.all(dim=1)  # [num_seeds]
+
+        # Greedy loop: continue until all seeds have valid vertex covers
+        max_iterations = num_nodes  # Safety limit
+        iteration = 0
+        
+        while iteration < max_iterations:
+            # Check which seeds still need more nodes
+            vc_valid = is_vc_batch(vc, row, col)  # [num_seeds]
+            
+            if vc_valid.all():
+                break
+            
+            # For seeds that are not yet valid, find the next node to add
+            p_masked = p.clone()
+            # Set probabilities to -inf for nodes already in the cover
+            p_masked[vc] = -float('inf')
+            
+            # For seeds that are already valid, set all to -inf so they don't add more nodes
+            p_masked[vc_valid.unsqueeze(1).expand(-1, num_nodes)] = -float('inf')
+            
+            # Find the next node to add for each seed using vectorized argmax
+            max_vals, next_nodes = p_masked.max(dim=1)  # [num_seeds], [num_seeds]
+            active_seeds = (max_vals > -float('inf')) & (~vc_valid)  # [num_seeds]
+            
+            if not active_seeds.any():
+                break
+            
+            # Add the selected nodes to the vertex covers for active seeds
+            vc[active_seeds, next_nodes[active_seeds]] = True
+            
+            # Update probabilities: set selected nodes to -inf for active seeds
+            p[active_seeds, next_nodes[active_seeds]] = -float('inf')
+            
+            iteration += 1
+
+        # Final check and compute sizes
+        vc_valid = is_vc_batch(vc, row, col)  # [num_seeds]
+        vc_sizes = vc.sum(dim=1).float()  # [num_seeds]
+        
+        # For seeds that didn't find a valid VC, use num_nodes as fallback
+        vc_sizes[~vc_valid] = num_nodes
+        
+        best_vc_size_for_graph = vc_sizes.min().item()
+        vc_size_list_batch.append(best_vc_size_for_graph)
+
+    return torch.tensor(vc_size_list_batch, dtype=float).mean()
 
 
 ### MAXBIPARTITE ###

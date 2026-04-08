@@ -171,6 +171,7 @@ class GNN(torch.nn.Module):
         head_type: str = 'node',
         encoder: Optional[torch.nn.Module] = None,
         conv: Optional[torch.nn.Module] = None,
+        conv_ffn: bool = False,
         layers_pre_mp: int = 1,
         layers_mp: int = 5,
         layers_post_mp: int = 2,
@@ -178,6 +179,7 @@ class GNN(torch.nn.Module):
         batch_norm: bool = True,
         l2_norm: bool = True,
         final_l2_norm: bool = True,
+        gsn: bool = False,
         dropout: float = 0.2,
         has_act: bool = True,
         act: Optional[Union[str, torch.nn.Module]] = 'relu',
@@ -209,8 +211,10 @@ class GNN(torch.nn.Module):
                 out_dim=dim_inner,
                 num_layers=layers_mp,
                 conv=conv,
+                conv_ffn=conv_ffn,
                 stage_type=stage_type,
                 final_l2_norm=final_l2_norm,
+                gsn=gsn,
                 batch_norm=batch_norm,
                 l2_norm=l2_norm,
                 dropout=dropout,
@@ -249,6 +253,10 @@ class GNN(torch.nn.Module):
         from torch_geometric.graphgym.init import init_weights
         self.apply(init_weights)
 
+    def reset_head(self):
+        from torch_geometric.graphgym.init import init_weights
+        self.post_mp.apply(init_weights)
+
     def forward(self, batch):
         for module in self.children():
             batch = module(batch)
@@ -263,6 +271,7 @@ class HybridGNN(GNN):
                  head_type: str = 'node',
                  encoder: Optional[torch.nn.Module] = None,
                  conv: Optional[torch.nn.Module] = None,
+                 conv_ffn: bool = False,
                  layers_pre_mp: int = 1,
                  layers_mp: int = 5,
                  layers_post_mp: int = 2,
@@ -270,6 +279,7 @@ class HybridGNN(GNN):
                  batch_norm: bool = True,
                  l2_norm: bool = True,
                  final_l2_norm: bool = True,
+                 gsn: bool = False,
                  dropout: float = 0.2,
                  has_act: bool = True,
                  act: Optional[Union[str, torch.nn.Module]] = 'relu',
@@ -278,8 +288,8 @@ class HybridGNN(GNN):
                  graph_pooling: str = 'add',
                  hybrid_stage: str = 'concat',
     ):
-        super().__init__(dim_in, dim_out, dim_inner, head_type, encoder, conv, layers_pre_mp, layers_mp, layers_post_mp,
-                         stage_type, batch_norm, l2_norm, final_l2_norm, dropout, has_act, act, last_act,
+        super().__init__(dim_in, dim_out, dim_inner, head_type, encoder, conv, conv_ffn, layers_pre_mp, layers_mp, layers_post_mp,
+                         stage_type, batch_norm, l2_norm, final_l2_norm, gsn, dropout, has_act, act, last_act,
                          edge_decoding, graph_pooling)
         if layers_pre_mp > 0:
             dim_in = dim_inner
@@ -292,8 +302,10 @@ class HybridGNN(GNN):
                 out_dim=dim_inner,
                 num_layers=layers_mp,
                 conv=conv,
+                conv_ffn=conv_ffn,
                 stage_type=stage_type,
                 final_l2_norm=final_l2_norm,
+                gsn=gsn,
                 batch_norm=batch_norm,
                 l2_norm=l2_norm,
                 dropout=dropout,
@@ -340,4 +352,11 @@ class HybridGNN(GNN):
         batch.x = x_list
         batch = self.post_mp(batch)
 
+        return batch
+
+
+class HybridGNNInverted(HybridGNN):
+    def forward(self, batch):
+        batch = super().forward(batch)
+        batch.x = 1 - batch.x
         return batch

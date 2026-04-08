@@ -6,14 +6,14 @@ task: 'maxclique'
 batch_size: 32  # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
 splits: '5-fold' # For k-fold splits (with 1 split separated for test). For train-val-test splits, use, e.g., [0.7, 0.1, 0.2]
 labels: False
-graph_stats: ['degree', 'cluster_coefficient', 'triangle_count']
+graph_stats: null #['degree', 'cluster_coefficient', 'triangle_count']
 num_workers: 0
 pin_memory: False
 
 num_samples: 6000
 n: [800, 1200]
 na: [40, 55]
-k: [20, 20]
+k: [20, 25]
 
 # Optional transforms to apply to the data
 # By default, NormalizeFeatures is always applied

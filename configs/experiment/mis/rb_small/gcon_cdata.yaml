@@ -1,0 +1,51 @@
+# @package _global_
+
+defaults:
+  - override /data: rb_small.yaml
+  - override /model: gcon.yaml
+  - override /task: mis.yaml
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+  - override /logger: wandb.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["mis", "rb", "small", "gcon"]
+
+seed: 12345
+
+data:
+  complement: True
+
+trainer:
+  min_epochs: 10
+  max_epochs: 200
+  gradient_clip_val: 0.5
+
+logger:
+  wandb:
+    tags: ${tags}
+    project: "COPT-MT [MIS]"
+
+model:
+  scheduler:
+    max_epoch: ${trainer.max_epochs}
+  net:
+    layers_pre_mp: 1
+    layers_mp: 16
+    layers_post_mp: 1
+    dim_inner: 64
+    stage_type: 'stack'
+    batch_norm: True
+    l2_norm: False
+    final_l2_norm: False
+    dropout: 0.3
+    has_act: True
+    act: 'gelu'
+    encoder:
+      _target_: src.models.network.gnn.FeatureEncoder
+      node_encoder:
+        _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
+        stat_list: ['degree', 'cluster_coefficient', 'triangle_count', 'degree_c', 'cluster_coefficient_c', 'triangle_count_c']
+

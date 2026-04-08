@@ -1,0 +1,41 @@
+# @package _global_
+
+trainer:
+  max_epochs: 300
+
+data:
+  task: 'mvc'
+
+model:
+  task: 'mvc'
+
+  optimizer:
+    _target_: torch.optim.AdamW
+    lr: 0.0005
+    weight_decay: 0.0
+
+  criterion:
+    _target_: src.models.loss.copt_loss.mvc_loss
+    _partial_: True
+    alpha: 1.0
+    beta: 1.01
+    reduction: 'sum'
+
+  metrics:
+    size:
+      _target_: src.utils.metrics.mvc_size_pyg_parallel
+      _partial_: True
+      num_seeds: 10
+      enable: True
+      # test: False
+
+callbacks:
+  model_checkpoint:
+    mode: 'min'
+  early_stopping:
+    mode: 'min'
+    patience: 200
+
+#logger:
+#  wandb:
+#    project: "COPT-MT [MVC]"

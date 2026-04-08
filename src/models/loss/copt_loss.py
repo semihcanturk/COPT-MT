@@ -54,8 +54,8 @@ def maxclique_loss_pyg(batch, alpha=1.0, beta=1.01, reduction='sum'):
     else:
         return loss
 
-def maxclique_loss(output, data, beta=0.1):
-    adj = data.get('adj')
+def maxclique_loss(output, batch, beta=0.1):
+    adj = batch.get('adj')
 
     loss1 = torch.matmul(output.transpose(-1, -2), torch.matmul(adj, output))
     loss2 = output.sum() ** 2 - loss1 - torch.sum(output ** 2)
@@ -65,10 +65,10 @@ def maxclique_loss(output, data, beta=0.1):
 
 ### MAXCUT ###
 
-def maxcut_loss_pyg(data):
-    x = (data.x - 0.5) * 2
-    src, dst = data.edge_index[0], data.edge_index[1]
-    return torch.sum(x[src] * x[dst]) / len(data.batch.unique())
+def maxcut_loss_pyg(batch):
+    x = (batch.x - 0.5) * 2
+    src, dst = batch.edge_index[0], batch.edge_index[1]
+    return torch.sum(x[src] * x[dst]) / len(batch.batch.unique())
 
 
 def maxcut_loss(data):
@@ -77,15 +77,15 @@ def maxcut_loss(data):
     return torch.matmul(x.transpose(-1, -2), torch.matmul(adj, x)).mean()
 
 
-def maxcut_mae_pyg(data):
-    x = (data.x > 0.5).float()
+def maxcut_mae_pyg(batch):
+    x = (batch.x > 0.5).float()
     x = (x - 0.5) * 2
-    y = data.cut_binary
+    y = batch.cut_binary
     y = (y - 0.5) * 2
 
-    x_list = unbatch(x, data.batch)
-    y_list = unbatch(y, data.batch)
-    edge_index_list = unbatch_edge_index(data.edge_index, data.batch)
+    x_list = unbatch(x, batch.batch)
+    y_list = unbatch(y, batch.batch)
+    edge_index_list = unbatch_edge_index(batch.edge_index, batch.batch)
 
     ae_list = []
     for x, y, edge_index in zip(x_list, y_list, edge_index_list):
@@ -94,11 +94,11 @@ def maxcut_mae_pyg(data):
     return 0.5 * torch.Tensor(ae_list).abs().mean()
 
 
-def maxcut_mae(data):
-    output = (data['x'] > 0.5).double()
-    target = torch.nan_to_num(data['cut_binary'])
+def maxcut_mae(batch):
+    output = (batch['x'] > 0.5).double()
+    target = torch.nan_to_num(batch['cut_binary'])
 
-    adj = data['adj_mat']
+    adj = batch['adj_mat']
     adj_weight = adj.sum(-1).sum(-1)
     target_size = adj_weight.clone()
     pred_size = adj_weight.clone()
@@ -129,17 +129,16 @@ def color_loss(output, adj):
 from torch.nn import BCEWithLogitsLoss
 ce_loss = BCEWithLogitsLoss()
 
-def plantedclique_loss_pyg(data):
-    return ce_loss(data.x, data.y.unsqueeze(-1))
+def plantedclique_loss_pyg(batch):
+    return ce_loss(batch.x, batch.y.unsqueeze(-1))
 
 
 ### MDS ###
 
-def mds_loss_pyg(data, beta=1.0, reduction='sum'):
-    batch_size = data.batch.max() + 1.0
-    
-    p = data.x.squeeze()
-    edge_index = remove_self_loops(data.edge_index)[0]
+def mds_loss_pyg(batch, beta=1.0, reduction='sum'):
+
+    p = batch.x.squeeze()
+    edge_index = remove_self_loops(batch.edge_index)[0]
     row, col = edge_index[0], edge_index[1]
 
     loss = p.sum() + beta * (
@@ -151,33 +150,12 @@ def mds_loss_pyg(data, beta=1.0, reduction='sum'):
     ).sum()
 
     if reduction == 'mean':
-        return loss / batch_size
+        return loss / batch.size(0)
     else:
         return loss
 
 
 ### MIS ###
-
-# @register_loss("mis_loss")
-# def mis_loss_pyg(data, beta=1.0, k=2, eps=1e-1):
-#     batch_size = data.batch.max() + 1.0
-
-#     edge_index = remove_self_loops(data.edge_index)[0]
-#     row, col = edge_index[0], edge_index[1]
-#     degree = torch.exp(data.degree)
-
-#     l1 = - torch.sum(data.x ** 2)
-#     l2 = + torch.sum((data.x[row] * data.x[col]) ** 2)
-
-#     # l1 = - torch.sum(torch.log(1 - data.x) * degree)
-#     # l2 = + torch.log((data.x[row] * data.x[col]) ** 1).sum()
-
-#     # l1 = - data.x.sum()
-#     # l2 = + ((data.x[row] * data.x[col]) ** k).sum()
-
-#     loss = l1 + beta * l2
-
-#     return loss #/ batch_size
 
 # DO NOT USE THIS! USE 'mis_loss_pyg' below instead
 def mis_loss_old(batch, beta=0.1):
@@ -194,7 +172,7 @@ def mis_loss_old(batch, beta=0.1):
     return loss / batch.size(0)
 
 
-def mis_loss_pyg(batch, alpha=1.0, beta=1.01, reduction='sum'):
+def mis_loss_pyg(batch, alpha=1.0, beta=1.01, reduction='sum', complement=False):
     """
     Loss for Maximum Independent Set based on the Hamiltonian H(X).
     H(X) = -A * Sum(x_i) + B * Sum(x_i * x_j for edge (i,j))
@@ -210,9 +188,42 @@ def mis_loss_pyg(batch, alpha=1.0, beta=1.01, reduction='sum'):
     for data in data_list:
         size_term = -alpha * data.x.sum()
 
-        src, dst = data.edge_index
+        edge_index = data.edge_index_c if complement else data.edge_index
+        src, dst = edge_index
         edge_penalty = torch.sum(data.x[src] * data.x[dst]) / 2
         penalty_term = beta * edge_penalty
+
+        loss += (size_term + penalty_term) / data.num_nodes
+
+    if reduction == 'mean':
+        return loss / batch.size(0)
+    else:
+        return loss
+
+
+def mis_loss_qubo_pyg(batch, penalty=2.0, reduction='sum', complement=False):
+    """
+    Loss for Maximum Independent Set using QUBO form: x^T Q x.
+    cost = -Σ x_i² + penalty * Σ_{(i,j)∈E} x_i * x_j
+
+    For binary {0,1} this is equivalent to the Hamiltonian form (mis_loss_pyg),
+    but differs during continuous optimization since -x_i² ≠ -x_i for x_i ∈ (0,1).
+    The quadratic node term pushes probabilities toward 0 or 1 more sharply.
+
+    Args:
+        penalty: Weight for the edge violation penalty (default 2.0, matching
+                 standard QUBO formulation where penalty > 1 enforces feasibility).
+    """
+    data_list = batch.to_data_list()
+    loss = 0.0
+
+    for data in data_list:
+        size_term = -torch.sum(data.x ** 2)
+
+        edge_index = data.edge_index_c if complement else data.edge_index
+        src, dst = edge_index
+        edge_penalty = torch.sum(data.x[src] * data.x[dst]) / 2
+        penalty_term = penalty * edge_penalty
 
         loss += (size_term + penalty_term) / data.num_nodes
 

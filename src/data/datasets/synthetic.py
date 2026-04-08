@@ -15,10 +15,11 @@ log = RankedLogger(__name__, rank_zero_only=True)
 
 
 class SyntheticDataset(InMemoryDataset):
-    def __init__(self, root, format, name, num_samples, multiprocessing=False, num_workers=0, transform=None, pre_transform=None):
+    def __init__(self, root, format, name, num_samples, multiprocessing=False, num_workers=0, transform=None, pre_transform=None, complement=False):
         self.name = name
         self.num_samples = num_samples
         self.multiprocessing = multiprocessing
+        self.complement = complement
         if self.multiprocessing:
             self.num_workers = num_workers if num_workers > 0 else cpu_count()
         super().__init__(osp.join(root, format), transform, pre_transform)
@@ -31,7 +32,10 @@ class SyntheticDataset(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        return ['data.pt']
+        if self.complement:
+            return ['data-c.pt']
+        else:
+            return ['data.pt']
 
     def create_graph(self, idx):
         raise NotImplementedError
