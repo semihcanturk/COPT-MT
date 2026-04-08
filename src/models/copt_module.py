@@ -86,7 +86,7 @@ class COPTModule(LightningModule):
 
         # for tracking best so far validation accuracy
         BestMetric = MinMetric if task in ['mds', 'mvc'] else MaxMetric
-        self.val_best_metrics = {name: BestMetric() for name in metrics}
+        self.val_best_metrics = {name: BestMetric() if 'violations' not in name else MinMetric() for name in metrics}
 
     def forward(self, batch):
         """Perform a forward pass through the model `self.net`.
@@ -166,11 +166,12 @@ class COPTModule(LightningModule):
             self.log(f"val/{name}_best", self.val_best_metrics[name].compute(), sync_dist=True,
                      prog_bar=(name == "size"))
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
         """Perform a single test step on a batch of data from the test set.
 
         :param batch: A batch of data from PyTorch Geometric.
         :param batch_idx: The index of the current batch.
+        :param dataloader_idx: Index of the current dataloader (for multiple test dataloaders).
         """
         batch, loss = self.model_step(batch)
         self.test_loss(loss)

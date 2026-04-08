@@ -157,27 +157,6 @@ def mds_loss_pyg(batch, beta=1.0, reduction='sum'):
 
 ### MIS ###
 
-# @register_loss("mis_loss")
-# def mis_loss_pyg(data, beta=1.0, k=2, eps=1e-1):
-#     batch_size = data.batch.max() + 1.0
-
-#     edge_index = remove_self_loops(data.edge_index)[0]
-#     row, col = edge_index[0], edge_index[1]
-#     degree = torch.exp(data.degree)
-
-#     l1 = - torch.sum(data.x ** 2)
-#     l2 = + torch.sum((data.x[row] * data.x[col]) ** 2)
-
-#     # l1 = - torch.sum(torch.log(1 - data.x) * degree)
-#     # l2 = + torch.log((data.x[row] * data.x[col]) ** 1).sum()
-
-#     # l1 = - data.x.sum()
-#     # l2 = + ((data.x[row] * data.x[col]) ** k).sum()
-
-#     loss = l1 + beta * l2
-
-#     return loss #/ batch_size
-
 # DO NOT USE THIS! USE 'mis_loss_pyg' below instead
 def mis_loss_old(batch, beta=0.1):
     data_list = batch.to_data_list()
@@ -213,6 +192,38 @@ def mis_loss_pyg(batch, alpha=1.0, beta=1.01, reduction='sum', complement=False)
         src, dst = edge_index
         edge_penalty = torch.sum(data.x[src] * data.x[dst]) / 2
         penalty_term = beta * edge_penalty
+
+        loss += (size_term + penalty_term) / data.num_nodes
+
+    if reduction == 'mean':
+        return loss / batch.size(0)
+    else:
+        return loss
+
+
+def mis_loss_qubo_pyg(batch, penalty=2.0, reduction='sum', complement=False):
+    """
+    Loss for Maximum Independent Set using QUBO form: x^T Q x.
+    cost = -Σ x_i² + penalty * Σ_{(i,j)∈E} x_i * x_j
+
+    For binary {0,1} this is equivalent to the Hamiltonian form (mis_loss_pyg),
+    but differs during continuous optimization since -x_i² ≠ -x_i for x_i ∈ (0,1).
+    The quadratic node term pushes probabilities toward 0 or 1 more sharply.
+
+    Args:
+        penalty: Weight for the edge violation penalty (default 2.0, matching
+                 standard QUBO formulation where penalty > 1 enforces feasibility).
+    """
+    data_list = batch.to_data_list()
+    loss = 0.0
+
+    for data in data_list:
+        size_term = -torch.sum(data.x ** 2)
+
+        edge_index = data.edge_index_c if complement else data.edge_index
+        src, dst = edge_index
+        edge_penalty = torch.sum(data.x[src] * data.x[dst]) / 2
+        penalty_term = penalty * edge_penalty
 
         loss += (size_term + penalty_term) / data.num_nodes
 
