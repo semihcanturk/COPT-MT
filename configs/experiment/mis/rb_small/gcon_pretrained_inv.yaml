@@ -1,43 +1,50 @@
 # @package _global_
 
 defaults:
-  - override /data: rb_large.yaml
+  - override /data: rb_small.yaml
   - override /model: gcon.yaml
-  - override /task: maxclique.yaml
   - override /callbacks: default.yaml
+  - override /task: mis.yaml
   - override /trainer: default.yaml
   - override /logger: wandb.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["maxclique", "rb", "small", "gcon"]
+tags: ["mis", "rb", "small", "gcon"]
 
 seed: 12345
 
 trainer:
   min_epochs: 10
-  max_epochs: 700
+  max_epochs: 50
   gradient_clip_val: 0.5
 
 logger:
   wandb:
     tags: ${tags}
+    project: "COPT-MT [MIS]"
 
 model:
+  _target_: src.models.copt_module.COPTTransferModule
+  # pretrain_path: '/home/mila/s/semih.canturk/COPT-MT/logs/train/runs/2026-01-01_09-38-08/checkpoints/last.ckpt'
+  pretrain_path: '/Users/semo/PycharmProjects/COPT-MT/logs/train/pretrained/mvc/GCON [1 post-MP] [1e-3]/checkpoints/epoch_224.ckpt'
+  freeze: 'all'
+  reset_head: False
   net:
+    _target_: src.models.network.gnn.HybridGNNInverted
     layers_pre_mp: 1
-    layers_mp: 20
-    layers_post_mp: 2
-    stage_type: 'skipsum'
+    layers_mp: 16
+    layers_post_mp: 1
+    stage_type: 'stack'
     batch_norm: True
     l2_norm: False
     final_l2_norm: False
-    gsn: False
     dropout: 0.3
     has_act: True
-    final_act: True
-    act: 'gelu'
+    act:
+      _target_: torch.nn.LeakyReLU
+      negative_slope: 0.3
     encoder:
       _target_: src.models.network.gnn.FeatureEncoder
       node_encoder:
@@ -45,6 +52,7 @@ model:
         stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
 
 callbacks:
+  model_checkpoint:
+    mode: 'min'
   early_stopping:
-    patience: 300
-
+    mode: 'min'
