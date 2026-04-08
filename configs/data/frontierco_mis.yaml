@@ -1,0 +1,17 @@
+_target_: src.data.frontierco_datamodule.FrontierCODataModule
+data_dir: ${paths.data_dir}
+train_format: 'rb'
+train_name: 'large'
+task: 'mis'
+batch_size: 32
+labels: False
+graph_stats: null
+num_workers: 0
+pin_memory: True
+
+num_samples: 6000
+n: [800, 1200]
+na: [40, 55]
+k: [20, 25]
+
+transforms: null
