@@ -1,0 +1,69 @@
+_target_: src.models.copt_module.COPTModule
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: True
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: src.models.optimizer.extra_optimizers.cosine_with_warmup_scheduler
+  _partial_: True
+  num_warmup_epochs: 50
+  max_epoch: 300
+
+net:
+  _target_: src.models.network.gps_model.GPSModel
+  dim_in: 1
+  dim_out: 1
+  dim_inner: 32
+  head_type: 'inductive_node'
+  encoder:
+    _target_: src.models.network.gnn.FeatureEncoder
+    dim_in: 1
+    dim_hid: ${model.net.dim_inner}
+    node_encoder:
+      _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
+      dim_in: 1
+      dim_pe: ${model.net.dim_inner}
+      dim_emb: ${model.net.dim_inner}
+      stat_list: ['degree', 'eccentricity', 'cluster_coefficient', 'triangle_count']
+    node_encoder_bn: True
+  layers_pre_mp: 1
+  layers_mp: 3
+  layers_post_mp: 2
+  batch_norm_pre_mp: True
+  l2_norm_pre_mp: False
+  dropout_pre_mp: 0.2
+  dropout: 0.0
+  attn_dropout: 0.0
+  layer_norm: False
+  batch_norm: True
+  act:
+    _target_: torch.nn.LeakyReLU
+    negative_slope: 0.01
+  last_act: 'sigmoid'
+  graph_pooling: 'add'
+  edge_decoding: 'concat'
+  # GPS-specific parameters: use pre-constructed layers (preferred)
+  local_model: null
+#    _target_: torch_geometric.nn.conv.res_gated_graph_conv.ResGatedGraphConv
+#    in_channels: ${model.net.dim_inner}
+#    out_channels: ${model.net.dim_inner}
+#    act:
+#      _target_: torch.nn.LeakyReLU
+#      negative_slope: 0.01
+  self_attn:
+    _target_: torch.nn.MultiheadAttention
+    embed_dim: ${model.net.dim_inner}
+    num_heads: 4
+    dropout: ${model.net.attn_dropout}
+    batch_first: True
+  # Alternative: use layer_type string (backward compatibility)
+  # layer_type: 'GatedGCN+Transformer'
+  # num_heads: 4
+
+labels: False
+
+# compile model for faster training with pytorch 2.0
+compile: False

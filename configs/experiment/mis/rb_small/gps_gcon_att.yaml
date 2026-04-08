@@ -1,0 +1,73 @@
+# @package _global_
+
+defaults:
+  - override /data: rb_small.yaml
+  - override /model: gps.yaml
+  - override /task: mis.yaml
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+  - override /logger: wandb.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["mis", "rb", "small", "gps"]
+
+seed: 12345
+
+trainer:
+  min_epochs: 10
+  max_epochs: 200
+  gradient_clip_val: 0.5
+
+logger:
+  wandb:
+    tags: ${tags}
+    project: "COPT-MT [MIS]"
+
+model:
+  net:
+    layers_pre_mp: 1
+    layers_mp: 16
+    layers_post_mp: 1
+    dim_inner: 64
+    dropout: 0.3
+    attn_dropout: 0.0
+    batch_norm: True
+    act:
+      _target_: torch.nn.LeakyReLU
+      negative_slope: 0.3
+    # Use pre-constructed layers (overrides base config)
+    local_model:
+      _target_: src.models.layer.gconconv.GCONConv
+      input_dim: ${model.net.dim_inner}
+      output_dim: ${model.net.dim_inner}
+      channel_list: [ [ 0 ], [ 1 ], [ 2 ], [ 4 ], [ 0, 1 ], [ 1, 2 ], [ 2, 4 ] ]
+      combine_fn: 'att_bias'
+      num_heads: 1
+      activation_att1: 'elu'
+      activation_att2: 'elu'
+      activation: 'elu'
+      depth_mlp: 1
+      skip: True
+      add_self_loops: True
+      norm: 'gcn'
+      filter_norm_dim: None
+      bias: False
+    self_attn:
+      _target_: torch.nn.MultiheadAttention
+      embed_dim: ${model.net.dim_inner}
+      num_heads: 4
+      dropout: ${model.net.attn_dropout}
+      batch_first: True
+    encoder:
+      _target_: src.models.network.gnn.FeatureEncoder
+      dim_in: 1
+      dim_hid: ${model.net.dim_inner}
+      node_encoder:
+        _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
+        dim_in: 1
+        dim_pe: ${model.net.dim_inner}
+        dim_emb: ${model.net.dim_inner}
+        stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
+      node_encoder_bn: True
