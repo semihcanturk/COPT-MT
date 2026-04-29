@@ -20,6 +20,14 @@ trainer:
   max_epochs: 300
   gradient_clip_val: 0.5
 
+data:
+  batch_size: 256
+  transforms:
+    _target_: torch_geometric.transforms.AddLaplacianEigenvectorPE
+    k: 31
+    is_undirected: True
+    attr_name: null
+
 logger:
   wandb:
     tags: ${tags}
@@ -33,6 +41,7 @@ model:
     lr: 0.0005
     #weight_decay: 0.0
   net:
+    dim_in: 32
     layers_pre_mp: 1
     layers_mp: 16
     layers_post_mp: 1
@@ -45,11 +54,7 @@ model:
     dropout: 0.3
     has_act: True
     act: 'gelu'
-    encoder:
-      _target_: src.models.network.gnn.FeatureEncoder
-      node_encoder:
-        _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
-        stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
+    encoder: null
 
 callbacks:
   model_checkpoint:

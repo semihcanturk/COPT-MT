@@ -1,9 +1,5 @@
 # @package _global_
 
-# not meant to run by itself as CSL does not have any node/edge features.
-# run `gcn_csl` instead to run CSL without any PSE:
-# python src/train.py experiment=csl/gcn_csl
-
 defaults:
   - override /data: ba_small.yaml
   - override /model: gcon.yaml
@@ -27,19 +23,11 @@ trainer:
 logger:
   wandb:
     tags: ${tags}
+    project: "COPT-MT [MDS]"
 
 model:
   net:
     dim_inner: 256
-    encoder:
-      dim_hid: 256
-      node_encoder:
-        dim_in: 1
-        dim_pe: 256
-        dim_emb: 256
-    conv:
-      dim_in: 256
-      dim_out: 256
     layers_pre_mp: 1
     layers_mp: 16
     layers_post_mp: 1

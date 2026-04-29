@@ -20,6 +20,9 @@ from src.data.datasets.er_dataset import ERDataset
 from src.data.datasets.bp_dataset import BPDataset
 from src.data.datasets.pc_dataset import PCDataset
 from src.data.datasets.rb_dataset import RBDataset
+from src.data.datasets.reduced_rb_dataset import ReducedRBDataset
+from src.data.datasets.reduced_ba_dataset import ReducedBADataset
+from src.data.datasets.combined_ba_dataset import CombinedBAMDSDataset
 from src.transforms.graph_stats import ComputeGraphStats, ComputeComplementGraphStats
 from src.transforms.transforms import pre_transform_in_memory
 
@@ -195,6 +198,9 @@ class SyntheticDataModule(LightningDataModule):
         num_workers: int = 0,
         pin_memory: bool = False,
         transforms: Optional[Union[Dict[str, Any], BaseTransform]] = None,
+        reduction: Optional[str] = None,
+        reductions: Optional[List[str]] = None,
+        include_base: bool = True,
         **dataset_kwargs,
     ) -> None:
         """Initialize a `TUDataModule`.
@@ -224,13 +230,39 @@ class SyntheticDataModule(LightningDataModule):
 
         self.batch_size_per_device = batch_size
 
-        self.dataset_cls = {
-            'ba': BADataset,
-            'er': ERDataset,
-            'bp': BPDataset,
-            'pc': PCDataset,
-            'rb': RBDataset,
-        }[self.hparams.format]
+        if reductions is not None:
+            if reduction is not None:
+                raise ValueError(
+                    "Use `reduction` (single) or `reductions` (combined), not both."
+                )
+            if self.hparams.format != 'ba':
+                raise ValueError(
+                    "`reductions` (combined) currently supports format='ba' only."
+                )
+            self.dataset_cls = CombinedBAMDSDataset
+            dataset_kwargs['reductions'] = list(reductions)
+            dataset_kwargs['include_base'] = include_base
+        elif reduction is not None:
+            reduced_cls_by_format = {
+                'rb': ReducedRBDataset,
+                'ba': ReducedBADataset,
+            }
+            if self.hparams.format not in reduced_cls_by_format:
+                raise ValueError(
+                    f"reduction='{reduction}' is not supported for "
+                    f"format='{self.hparams.format}'. Supported formats: "
+                    f"{list(reduced_cls_by_format)}."
+                )
+            self.dataset_cls = reduced_cls_by_format[self.hparams.format]
+            dataset_kwargs['reduction'] = reduction
+        else:
+            self.dataset_cls = {
+                'ba': BADataset,
+                'er': ERDataset,
+                'bp': BPDataset,
+                'pc': PCDataset,
+                'rb': RBDataset,
+            }[self.hparams.format]
         self.dataset_kwargs = dataset_kwargs
 
     def _init_pretransforms(self):
@@ -399,6 +431,7 @@ class SyntheticDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=True,
+            persistent_workers=self.hparams.num_workers > 0
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -412,6 +445,7 @@ class SyntheticDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
+            persistent_workers=self.hparams.num_workers > 0
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -425,6 +459,7 @@ class SyntheticDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
+            persistent_workers=self.hparams.num_workers > 0
         )
 
     def teardown(self, stage: Optional[str] = None) -> None:

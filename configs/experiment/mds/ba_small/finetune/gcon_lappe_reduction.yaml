@@ -1,0 +1,31 @@
+# @package _global_
+
+defaults:
+  - /experiment/mds/ba_small/gcon
+  - override /data: ba_small_mds_from_mvc.yaml
+  - _self_
+
+trainer:
+  max_epochs: 20
+
+data:
+  transforms:
+    _target_: torch_geometric.transforms.AddLaplacianEigenvectorPE
+    k: 31
+    is_undirected: True
+    attr_name: null
+
+model:
+  _target_: src.models.copt_module.COPTTransferModule
+  pretrain_path: 'weights/mds/GCON-LapPE-64.ckpt'
+  freeze: 'backbone'
+  reset_head: False
+  net:
+    dim_in: 32
+    encoder: null
+  metrics:
+    size:
+      _target_: src.utils.metrics.size_from_mds_pyg_parallel
+      _partial_: True
+      num_seeds: 10
+      reduction: mvc_to_mds

@@ -315,121 +315,168 @@ def mds_size_pyg(data, num_seeds: int = 1, enable: bool = True, test: bool = Fal
     return torch.Tensor(ds_list).mean()
 
 
+def _is_ds_batch(ds_batch, row, col):
+    """Check dominating set validity for all seeds in parallel.
+
+    ds_batch: [num_seeds, num_nodes] bool
+    row, col: edge endpoints, with self-loops already added.
+    Returns: [num_seeds] bool
+    """
+    if row.numel() == 0:
+        return torch.ones(ds_batch.size(0), dtype=torch.bool, device=ds_batch.device)
+
+    num_seeds_batch, num_nodes_batch = ds_batch.shape
+    device = ds_batch.device
+
+    ds_at_edges = ds_batch.float()[:, row]  # [num_seeds, num_edges]
+    seed_offsets = torch.arange(num_seeds_batch, device=device).unsqueeze(1) * num_nodes_batch
+    col_offset = col.unsqueeze(0) + seed_offsets  # [num_seeds, num_edges]
+
+    agg_flat = scatter(
+        ds_at_edges.flatten(),
+        index=col_offset.flatten(),
+        dim_size=num_seeds_batch * num_nodes_batch,
+        reduce='sum',
+    )
+    agg = agg_flat.view(num_seeds_batch, num_nodes_batch)
+    return (agg >= 1.0).all(dim=1)
+
+
+def _decode_ds_per_graph(graph, num_seeds: int):
+    """Greedy parallel-seed DS decoder over `graph.x` model scores.
+
+    Returns:
+        ds:       [num_seeds, num_nodes] bool — DS mask per seed
+        ds_valid: [num_seeds] bool             — whether each seed is a valid DS
+    """
+    edge_index = add_self_loops(graph.edge_index)[0]
+    row, col = edge_index[0], edge_index[1]
+    num_nodes = graph.x.size(0)
+    device = graph.x.device
+
+    ds = torch.zeros(num_seeds, num_nodes, dtype=torch.bool, device=device)
+    p = graph.x.squeeze().unsqueeze(0).expand(num_seeds, -1).clone()  # [num_seeds, num_nodes]
+
+    # Per-seed "skip top-k" diversification: seed `s` masks out the top-s nodes.
+    for skip in range(num_seeds):
+        if skip > 0:
+            p_seed = p[skip].clone()
+            for _ in range(skip):
+                if torch.max(p_seed) == -torch.inf:
+                    break
+                idx = torch.argmax(p_seed)
+                p_seed[idx] = -torch.inf
+            p[skip] = p_seed
+
+    for _ in range(num_nodes):  # safety limit
+        ds_valid = _is_ds_batch(ds, row, col)
+        if ds_valid.all():
+            break
+
+        p_masked = p.clone()
+        p_masked[ds] = -torch.inf
+        p_masked[ds_valid.unsqueeze(1).expand(-1, num_nodes)] = -torch.inf
+
+        max_vals, next_nodes = p_masked.max(dim=1)
+        active_seeds = (max_vals > -torch.inf) & (~ds_valid)
+        if not active_seeds.any():
+            break
+
+        ds[active_seeds, next_nodes[active_seeds]] = True
+        p[active_seeds, next_nodes[active_seeds]] = -torch.inf
+
+    ds_valid = _is_ds_batch(ds, row, col)
+    return ds, ds_valid
+
+
+def _recover_vc_sizes(ds, original_mask, is_isolated, mid_edge_index,
+                      mid_edge_endpoints_index):
+    """Vectorized DS→VC recovery via the gadget rule (mirrors
+    `src.utils.reductions.recover_vc_from_ds`):
+      VC = (DS ∩ original) \\ isolated, plus one endpoint per mid-edge in DS.
+
+    ds:                       [num_seeds, num_nodes] bool
+    original_mask, is_isolated: [num_nodes] bool (per-graph)
+    mid_edge_index:           [num_mid] long
+    mid_edge_endpoints_index: [2, num_mid] long
+
+    Returns: [num_seeds] long — VC size per seed
+    """
+    keep = original_mask & (~is_isolated)
+    vc_mask = ds & keep.unsqueeze(0)  # [num_seeds, num_nodes]
+
+    if mid_edge_index.numel() > 0:
+        sel = ds[:, mid_edge_index]  # [num_seeds, num_mid]
+        u_endpoints = mid_edge_endpoints_index[0]  # [num_mid] — pick endpoint 'u'
+        seed_idx, mid_idx = sel.nonzero(as_tuple=True)
+        vc_mask[seed_idx, u_endpoints[mid_idx]] = True
+
+    return vc_mask.sum(dim=1)
+
+
 def mds_size_pyg_parallel(data, num_seeds: int = 1, enable: bool = True):
-    """
-    Optimized parallel version that processes all seeds simultaneously using vectorized operations.
-    Computes the Minimum Dominating Set size baseline using a greedy strategy guided by model scores (data.x).
-    """
+    """Greedy MDS-size baseline driven by model scores (data.x), with
+    `num_seeds` diversified seeds run in parallel; reports the mean of the
+    best (smallest) DS size per graph."""
     if not enable:
         return torch.tensor(float('nan'))
 
-    data_list = data.to_data_list()
+    sizes = []
+    for graph in data.to_data_list():
+        ds, ds_valid = _decode_ds_per_graph(graph, num_seeds)
+        ds_sizes = ds.sum(dim=1).float()
+        ds_sizes[~ds_valid] = graph.x.size(0)  # fallback: trivial DS = all nodes
+        sizes.append(ds_sizes.min().item())
+    return torch.tensor(sizes, dtype=float).mean()
 
-    ds_list = []
 
-    for graph in data_list:
-        edge_index = add_self_loops(graph.edge_index)[0]
-        row, col = edge_index[0], edge_index[1]
-        num_nodes = graph.x.size(0)
-        device = graph.x.device
+# Per-`reduction` formula mapping VC-size on the gadget input back to a
+# source-task size. All four reductions pass through the gadget, so the only
+# axis of variation is whether we report VC itself or `n_original − VC`:
+#   - mvc_to_mds:       MVC       = VC
+#   - mis_to_mds:       MIS       = |V(G)|            − VC = n_original − VC
+#   - maxclique_to_mds: MaxClique = MIS_on_complement = n_original − VC
+#   - maxcut_to_mds:    MaxCut    = MIS_on_conflict   = n_original − VC
+# (For maxclique_to_mds, n_original = |V(complement(G))| = |V(G)|.
+#  For maxcut_to_mds,    n_original = |V(conflict(G))| = 2|E(G)|.)
+_MDS_RECOVERY_FORMULAS = {
+    'mvc_to_mds':       lambda graph, vc: vc,
+    'mis_to_mds':       lambda graph, vc: graph.n_original.item() - vc,
+    'maxclique_to_mds': lambda graph, vc: graph.n_original.item() - vc,
+    'maxcut_to_mds':    lambda graph, vc: graph.n_original.item() - vc,
+}
 
-        ds = torch.zeros(num_seeds, num_nodes, dtype=torch.bool, device=device)
-        p = graph.x.squeeze().unsqueeze(0).expand(num_seeds, -1).clone()  # [num_seeds, num_nodes]
 
-        for skip in range(num_seeds):
-            if skip > 0:
-                p_seed = p[skip].clone()
-                for _ in range(skip):
-                    if torch.max(p_seed) == -torch.inf:
-                        break
-                    idx = torch.argmax(p_seed)
-                    p_seed[idx] = -torch.inf
-                p[skip] = p_seed
+def size_from_mds_pyg_parallel(data, num_seeds: int = 1, enable: bool = True,
+                               reduction: str = 'mis_to_mds'):
+    """Decode an MDS on a reduction-wrapped graph (greedy, parallel-seed),
+    apply the gadget DS→VC recovery, then report the corresponding source-task
+    size for the given `reduction`. Requires per-graph recovery tensors
+    attached by `src.data.datasets.reduced_synthetic.reduce_data`.
+    """
+    if not enable:
+        return torch.tensor(float('nan'))
+    if reduction not in _MDS_RECOVERY_FORMULAS:
+        raise ValueError(
+            f"Unknown reduction '{reduction}'. "
+            f"Choose from {list(_MDS_RECOVERY_FORMULAS)}."
+        )
+    transform = _MDS_RECOVERY_FORMULAS[reduction]
 
-        def is_ds_batch(ds_batch, row, col):
-            """Check dominating set validity for all seeds in parallel."""
-            if row.numel() == 0:
-                return torch.ones(ds_batch.size(0), dtype=torch.bool, device=ds_batch.device)
-            
-            # ds_batch: [num_seeds, num_nodes]
-            # For each node, check if it's dominated (has a neighbor in ds or is in ds itself)
-            # Using scatter: for each node, sum up if any of its neighbors (or itself) are in ds
-            num_seeds_batch = ds_batch.size(0)
-            num_nodes_batch = ds_batch.size(1)
-            
-            # Float for scatter op
-            ds_float = ds_batch.float()
-            
-            # Expand row and col for batch processing
-            # row: [num_edges], col: [num_edges]
-            # We need to scatter for each seed: ds_float[:, row] gives [num_seeds, num_edges]
-            ds_at_edges = ds_float[:, row]  # [num_seeds, num_edges]
-            
-            # Reshape for scatter: flatten seeds and edges, then reshape back
-            # scatter expects 1D index, so we need to offset indices for each seed
-            # Create offset indices: seed_idx * num_nodes_batch for each seed
-            seed_offsets = torch.arange(num_seeds_batch, device=device).unsqueeze(1) * num_nodes_batch  # [num_seeds, 1]
-            col_offset = col.unsqueeze(0) + seed_offsets  # [num_seeds, num_edges]
-            
-            # Flatten for scatter
-            ds_flat = ds_at_edges.flatten()  # [num_seeds * num_edges]
-            col_flat = col_offset.flatten()  # [num_seeds * num_edges]
-            
-            # Scatter: aggregate for each (seed, node) pair
-            agg_flat = scatter(ds_flat, index=col_flat, dim_size=num_seeds_batch * num_nodes_batch, reduce='sum')
-            agg = agg_flat.view(num_seeds_batch, num_nodes_batch)  # [num_seeds, num_nodes]
-            
-            # Check if all nodes are visited (dominated) for each seed
-            visited = agg >= 1.0  # [num_seeds, num_nodes]
-            valid_mask = visited.all(dim=1)  # [num_seeds]
-            
-            return valid_mask
-
-        # Greedy loop: continue until all seeds have valid dominating sets
-        max_iterations = num_nodes  # Safety limit
-        iteration = 0
-        
-        while iteration < max_iterations:
-            # Check which seeds still need more nodes
-            ds_valid = is_ds_batch(ds, row, col)  # [num_seeds]
-            
-            if ds_valid.all():
-                break
-            
-            # For seeds that are not yet valid, find the next node to add
-            p_masked = p.clone()
-            # Set probabilities to -inf for nodes already in the dominating set
-            p_masked[ds] = -torch.inf
-            
-            # For seeds that are already valid, set all to -inf so they don't add more nodes
-            p_masked[ds_valid.unsqueeze(1).expand(-1, num_nodes)] = -torch.inf
-            
-            # Find the next node to add for each seed using vectorized argmax
-            max_vals, next_nodes = p_masked.max(dim=1)  # [num_seeds], [num_seeds]
-            active_seeds = (max_vals > -torch.inf) & (~ds_valid)  # [num_seeds]
-            
-            if not active_seeds.any():
-                break
-            
-            # Add the selected nodes to the dominating sets for active seeds
-            ds[active_seeds, next_nodes[active_seeds]] = True
-            
-            # Update probabilities: set selected nodes to -inf for active seeds
-            p[active_seeds, next_nodes[active_seeds]] = -torch.inf
-            
-            iteration += 1
-
-        # Final check and compute sizes
-        ds_valid = is_ds_batch(ds, row, col)  # [num_seeds]
-        ds_sizes = ds.sum(dim=1).float()  # [num_seeds]
-        
-        # For seeds that didn't find a valid DS, use num_nodes as fallback
-        ds_sizes[~ds_valid] = num_nodes
-        
-        best_ds_size_for_graph = ds_sizes.min().item()
-        ds_list.append(best_ds_size_for_graph)
-
-    return torch.tensor(ds_list, dtype=float).mean()
+    sizes = []
+    for graph in data.to_data_list():
+        ds, ds_valid = _decode_ds_per_graph(graph, num_seeds)
+        vc_sizes = _recover_vc_sizes(
+            ds, graph.original_mask, graph.is_isolated,
+            graph.mid_edge_index, graph.mid_edge_endpoints_index,
+        ).float()
+        # Worst-case VC = n_original makes invalid seeds un-pickable for any
+        # reduction: MVC reports the largest possible VC, MIS-like collapses
+        # the source size to 0.
+        vc_sizes[~ds_valid] = float(graph.n_original.item())
+        best_vc = vc_sizes.min()
+        sizes.append(transform(graph, best_vc).item())
+    return torch.tensor(sizes, dtype=float).mean()
 
 
 def mds_acc_pyg(data):

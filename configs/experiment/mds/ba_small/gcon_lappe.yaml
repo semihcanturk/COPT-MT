@@ -1,59 +1,56 @@
 # @package _global_
 
 defaults:
-  - override /data: rb_small.yaml
+  - override /data: ba_small.yaml
   - override /model: gcon.yaml
+  - override /task: mds.yaml
   - override /callbacks: default.yaml
-  - override /task: mvc.yaml
   - override /trainer: default.yaml
   - override /logger: wandb.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["mvc", "rb", "small", "gcon"]
+tags: ["mds", "ba", "small", "gcon"]
 
 seed: 12345
 
 trainer:
   min_epochs: 10
-  max_epochs: 300
+  max_epochs: 100
   gradient_clip_val: 0.5
+
+data:
+  batch_size: 256
+  transforms:
+    _target_: torch_geometric.transforms.AddLaplacianEigenvectorPE
+    k: 31
+    is_undirected: True
+    attr_name: null
 
 logger:
   wandb:
     tags: ${tags}
-    project: "COPT-MT [MVC]"
+    project: "COPT-MT [MDS]"
 
 model:
-  optimizer:
-    #_target_: torch.optim.Rprop
-    _target_: torch.optim.AdamW
-    _partial_: True
-    lr: 0.0005
-    #weight_decay: 0.0
   net:
+    dim_in: 32
+    dim_inner: 256
+    encoder: null
     layers_pre_mp: 1
     layers_mp: 16
     layers_post_mp: 1
-    dim_inner: 64
-    stage_type: 'stack'
+    stage_type: 'skipsum'
     batch_norm: True
-    l2_norm: False
+    l2_norm: True
     final_l2_norm: False
-    gsn: False
     dropout: 0.3
     has_act: True
     act: 'gelu'
-    encoder:
-      _target_: src.models.network.gnn.FeatureEncoder
-      node_encoder:
-        _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
-        stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
 
 callbacks:
   model_checkpoint:
     mode: 'min'
   early_stopping:
     mode: 'min'
-    patience: 200
