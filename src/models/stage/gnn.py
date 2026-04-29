@@ -22,6 +22,7 @@ class GNNStackStage(torch.nn.Module):
         gsn: bool = False,
         dropout: float = 0.2,
         act: Optional[Union[str, torch.nn.Module]] = None,
+        weight_sharing: bool = False,
     ):
         super().__init__()
         self.num_layers = num_layers
@@ -41,7 +42,7 @@ class GNNStackStage(torch.nn.Module):
                     d_in = in_dim + i * out_dim
             else:
                 d_in = in_dim if i == 0 else out_dim
-            layer = GeneralLayer(conv, d_in, out_dim, batch_norm, l2_norm, dropout, act, conv_ffn)
+            layer = GeneralLayer(conv, d_in, out_dim, batch_norm, l2_norm, dropout, act, conv_ffn, weight_sharing=weight_sharing)
             self.add_module(f'layer{i}', layer)
 
     def forward(self, batch):

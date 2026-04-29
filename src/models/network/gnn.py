@@ -188,6 +188,7 @@ class GNN(torch.nn.Module):
         last_act: Optional[Union[str, torch.nn.Module]] = 'sigmoid',
         edge_decoding: str = 'concat',
         graph_pooling: str = 'add',
+        deepcopy: bool = True,
     ):
         super().__init__()
         self.encoder = encoder
@@ -221,6 +222,7 @@ class GNN(torch.nn.Module):
                 l2_norm=l2_norm,
                 dropout=dropout,
                 act=act if has_act else None,
+                deepcopy=deepcopy,
             )
 
         # Assign the appropriate head based on head_type
@@ -288,6 +290,7 @@ class HybridGNN(GNN):
                  edge_decoding: str = 'concat',
                  graph_pooling: str = 'add',
                  hybrid_stage: str = 'concat',
+                 deepcopy: bool = True,
     ):
         super().__init__(dim_in, dim_out, dim_inner, head_type, encoder, conv, conv_ffn, layers_pre_mp, layers_mp, layers_post_mp,
                          stage_type, batch_norm, l2_norm, final_l2_norm, gsn, dropout, has_act, act, last_act,
@@ -311,6 +314,7 @@ class HybridGNN(GNN):
                 l2_norm=l2_norm,
                 dropout=dropout,
                 act=act if has_act else None,
+                deepcopy=deepcopy,
             )
 
         # TODO: decide what to do. maybe sum x_dims
