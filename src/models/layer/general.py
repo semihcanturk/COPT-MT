@@ -1,3 +1,5 @@
+import copy
+import functools
 from typing import Union, Optional
 
 import torch
@@ -25,7 +27,15 @@ class GeneralLayer(torch.nn.Module):
             self.lin = True
         else:
             self.lin = False
-        self.layer = Linear(in_dim, out_dim, **kwargs) if self.lin else layer
+
+        if self.lin:
+            self.layer = Linear(in_dim, out_dim, **kwargs)
+        else:
+            if isinstance(layer.layer, functools.partial):
+                self.layer = LayerWrapper(layer.layer(in_channels=in_dim, out_channels=out_dim), edge_attr=True)
+            else:
+                self.layer = copy.deepcopy(layer)
+
         self.batch_norm = batch_norm
         self.l2_norm = l2_norm
 
