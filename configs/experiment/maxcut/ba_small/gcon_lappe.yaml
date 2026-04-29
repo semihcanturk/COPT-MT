@@ -1,0 +1,53 @@
+# @package _global_
+
+# not meant to run by itself as CSL does not have any node/edge features.
+# run `gcn_csl` instead to run CSL without any PSE:
+# python src/train.py experiment=csl/gcn_csl
+
+defaults:
+  - override /data: ba_small.yaml
+  - override /model: gcon.yaml
+  - override /task: maxcut.yaml
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+  - override /logger: wandb.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["maxcut", "ba", "small", "gcon"]
+
+seed: 12345
+
+data:
+  batch_size: 256
+  transforms:
+    _target_: torch_geometric.transforms.AddLaplacianEigenvectorPE
+    k: 31
+    is_undirected: True
+    attr_name: null
+
+trainer:
+  min_epochs: 10
+  max_epochs: 300
+  # gradient_clip_val: 0.5
+
+logger:
+  wandb:
+    tags: ${tags}
+
+model:
+  net:
+    dim_in: 32
+    layers_pre_mp: 1
+    layers_mp: 16
+    layers_post_mp: 1
+    stage_type: 'stack'
+    batch_norm: True
+    l2_norm: False
+    final_l2_norm: False
+    dropout: 0.3
+    has_act: True
+    act: 'gelu'
+    encoder: null
+
