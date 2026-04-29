@@ -5,9 +5,9 @@ net:
   conv:
     _target_: src.models.layer.general.LayerWrapper
     layer:
-      _target_: src.models.layer.gconconv.GCONLayer
-      dim_in: ${model.net.dim_inner}
-      dim_out: ${model.net.dim_inner}
+      _target_: src.models.layer.gconconv.GCONConv
+      input_dim: ${model.net.dim_inner}
+      output_dim: ${model.net.dim_inner}
       channel_list: [[0], [1], [2], [4], [0, 1], [1, 2], [2, 4]]
       combine_fn: 'att_bias'
       num_heads: 1
