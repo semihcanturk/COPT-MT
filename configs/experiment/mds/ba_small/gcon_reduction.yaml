@@ -1,0 +1,14 @@
+# @package _global_
+
+defaults:
+  - /experiment/mds/ba_small/gcon
+  - override /data: ba_small_mds_from_mvc.yaml
+  - _self_
+
+model:
+  metrics:
+    size:
+      _target_: src.utils.metrics.size_from_mds_pyg_parallel
+      _partial_: True
+      num_seeds: 10
+      reduction: mvc_to_mds

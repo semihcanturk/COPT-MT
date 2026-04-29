@@ -1,0 +1,20 @@
+_target_: src.data.synthetic_datamodule.SyntheticDataModule
+data_dir: ${paths.data_dir}
+format: 'ba'
+name: 'small'
+task: 'mds'
+reduction: 'mis_to_mds'
+batch_size: 256
+splits: '5-fold'
+labels: False
+graph_stats: null # ['degree', 'cluster_coefficient', 'triangle_count']
+num_workers: 0
+pin_memory: False
+
+num_samples: 6000
+n_min: 200
+n_max: 300
+num_edges: 4
+
+# Optional transforms to apply to the data
+transforms: null
