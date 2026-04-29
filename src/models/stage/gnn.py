@@ -22,6 +22,7 @@ class GNNStackStage(torch.nn.Module):
         gsn: bool = False,
         dropout: float = 0.2,
         act: Optional[Union[str, torch.nn.Module]] = None,
+        deepcopy: bool = True,
     ):
         super().__init__()
         self.num_layers = num_layers
@@ -41,7 +42,7 @@ class GNNStackStage(torch.nn.Module):
                     d_in = in_dim + i * out_dim
             else:
                 d_in = in_dim if i == 0 else out_dim
-            layer = GeneralLayer(conv, d_in, out_dim, batch_norm, l2_norm, dropout, act, conv_ffn)
+            layer = GeneralLayer(conv, d_in, out_dim, batch_norm, l2_norm, dropout, act, conv_ffn, deepcopy)
             self.add_module(f'layer{i}', layer)
 
     def forward(self, batch):
@@ -84,6 +85,7 @@ class GNNConcatStage(torch.nn.Module):
                  gsn: bool = False,
                  dropout: float = 0.2,
                  act: Optional[Union[str, torch.nn.Module]] = 'relu',
+                 deepcopy: bool = True,
                  **kwargs
                  ):
 
@@ -102,7 +104,7 @@ class GNNConcatStage(torch.nn.Module):
             else:
                 d_in = in_dim if i == 0 else out_dim
             self.x_dims.append(d_in)
-            layer = GeneralLayer(conv, d_in, out_dim, batch_norm, l2_norm, dropout, act, conv_ffn, **kwargs)
+            layer = GeneralLayer(conv, d_in, out_dim, batch_norm, l2_norm, dropout, act, conv_ffn, deepcopy, **kwargs)
             self.add_module(f'layer{i}', layer)
 
     def forward(self, batch):

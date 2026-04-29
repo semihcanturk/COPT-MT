@@ -19,6 +19,7 @@ class GeneralLayer(torch.nn.Module):
             dropout: float,
             act: Optional[Union[str, torch.nn.Module]],
             ffn: bool = False,
+            deepcopy: bool = True,
             **kwargs,
     ):
         super().__init__()
@@ -34,7 +35,7 @@ class GeneralLayer(torch.nn.Module):
             if isinstance(layer.layer, functools.partial):
                 self.layer = LayerWrapper(layer.layer(in_channels=in_dim, out_channels=out_dim), edge_attr=True)
             else:
-                self.layer = copy.deepcopy(layer)
+                self.layer = copy.deepcopy(layer) if deepcopy else layer
 
         self.batch_norm = batch_norm
         self.l2_norm = l2_norm
