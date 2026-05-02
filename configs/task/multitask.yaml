@@ -12,18 +12,30 @@ model:
     maxclique:
       _target_: src.models.loss.copt_loss.maxclique_loss_pyg
       _partial_: True
+      alpha: 1.0
+      beta: 1.01
+      reduction: 'sum'
     mds:
       _target_: src.models.loss.copt_loss.mds_loss_pyg
       _partial_: True
+      beta: 1.0
+      reduction: 'mean'
     mis:
       _target_: src.models.loss.copt_loss.mis_loss_pyg
       _partial_: True
+      beta: 1.01
     color:
       _target_: src.models.loss.copt_loss.color_loss_pyg
       _partial_: True
       beta: 0.1
     cliquecover:
       _target_: src.models.loss.copt_loss.cliquecover_loss_pyg
+      _partial_: True
+    mvc:
+      _target_: src.models.loss.copt_loss.mvc_loss
+      _partial_: True
+    hcp:
+      _target_: src.models.loss.copt_loss.hcp_loss
       _partial_: True
 
   metrics:
@@ -39,13 +51,14 @@ model:
         num_seeds: 10
     mds:
       size:
-        _target_: src.utils.metrics.mds_size_pyg
+        _target_: src.utils.metrics.mds_size_pyg_parallel
         _partial_: True
         num_seeds: 1
     mis: 
       size:
         _target_: src.utils.metrics.mis_size_pyg
         _partial_: True
+        dec_length: 300
     color:
       violations:
         _target_: src.utils.metrics.color_violations_pyg
@@ -53,4 +66,12 @@ model:
     cliquecover:
       violations:
         _target_: src.utils.metrics.cliquecover_violations_pyg
+        _partial_: True
+    mvc: 
+      size:
+        _target_: src.utils.metrics.mvc_size_pyg_parallel
+        _partial_: True
+    hcp: 
+      violations:
+        _target_: src.utils.metrics.hcp_violations_pyg
         _partial_: True

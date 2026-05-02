@@ -132,13 +132,13 @@ def color_loss_pyg(data, beta = 0.001):
     edge_index, _ = remove_self_loops(data.edge_index)
     src, dst = edge_index
     term1 = torch.sum((1-X.sum(dim=-1))**2)
-    term2 = torch.sum(X[src] * X[dst])
+    term2 = 0.5*torch.sum(X[src] * X[dst])
     #L1 regularization on the colors to force extra colors not to be used
     #color_usage = X.sum(dim=0)
     #term3 = beta * color_usage.sum()
     #term3 = beta * X.max(dim=0).values.sum()
 
-    return  (term1+term2)/500 #+term3
+    return  (term1+term2)/1000 #+term3
 
 
 '''
@@ -261,9 +261,9 @@ def mis_loss_pyg(batch, alpha=1.0, beta=1.01, reduction='sum', complement=False)
         loss += (size_term + penalty_term) / data.num_nodes
 
     if reduction == 'mean':
-        return loss / batch.size(0)
+        return 2*loss / batch.size(0)
     else:
-        return loss
+        return 2*loss
 
 
 def mis_loss_qubo_pyg(batch, penalty=2.0, reduction='sum', complement=False):
@@ -325,5 +325,36 @@ def maxbipartite_loss(output, adj, beta):
 
 
 
+### Hamiltonian Cycle
 
+def hcp_loss(data, alpha=1.0, reduction='sum'):
+    X = data.x
+    edge_index, _ = remove_self_loops(data.edge_index)
 
+    n = X.size(0)
+    N = X.size(1)
+
+    src, dst = edge_index
+
+    term1 = torch.sum((1 - X.sum(dim=1)) ** 2) / n
+    term2 = torch.sum((1 - X.sum(dim=0)) ** 2) / N
+
+    X_shift = torch.roll(X, shifts=-1, dims=1)
+
+    col_sum = X.sum(dim=0)
+    col_sum_shift = X_shift.sum(dim=0)
+    full = torch.sum(col_sum * col_sum_shift)
+
+    edge_term = torch.sum(
+        (X[src] * X_shift[dst]).sum(dim=1)
+    )
+
+    full = full / (n * n)
+    edge_term = edge_term / (n * n)
+
+    term3 = full - 2*edge_term
+
+    loss = alpha * (term1 + term2 + term3)
+
+    #return loss if reduction == 'sum' else loss.mean()
+    return loss if reduction == 'sum' else loss.mean()

@@ -2,15 +2,15 @@
 
 defaults:
   - _self_
-  - data: rb_small # choose datamodule with `test_dataloader()` for evaluation
+  - data: ba_large # choose datamodule with `test_dataloader()` for evaluation
   - model: gcon
-  - logger: csv
-  - trainer: default
+  - logger: wandb
+  - trainer: gpu
   - paths: default
   - extras: default
   - hydra: default
 
-  - task: maxclique
+  - task: multitask
   - callbacks: default
   - experiment: null
 

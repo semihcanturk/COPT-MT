@@ -16,6 +16,14 @@ tags: ["multitask", "ba", "small", "gcon"]
 
 seed: 12345
 
+#data:
+  #for dimacs instances, uncomment and modify the following:
+  #format: 'dimacs'
+  #name: 'mis'
+  #task: 'mis'
+  #data_dir: data/dimacs/mis
+  #instance_names: ['1dc.64']
+
 trainer:
   min_epochs: 10
   max_epochs: 200
@@ -34,9 +42,6 @@ logger:
   wandb:
     tags: ${tags}
 
-#data:
-#  num_workers : 0
-
 model:
   _target_: src.models.copt_module.MultiCOPTModule
   ### define custom weights for the losses ###
@@ -47,6 +52,8 @@ model:
     mis: 1
     color: 1
     cliquecover: 1
+    mvc: 1
+    hcp: 1
   strategy: 'sum' #sum OR alternate OR pcgrad
   net:
     _target_: src.models.network.gnn.MultiHybridGNN
@@ -55,9 +62,11 @@ model:
       maxclique: 1
       mds: 1
       mis: 1
+      mvc: 1
       ### change for the number of colors/cliques desired ###
       color: 10
       cliquecover: 10
+      hcp: 250
     dim_inner: 64
     # write here the list of tasks to train on 
     tasks : ['maxcut'] 
@@ -78,7 +87,7 @@ model:
       node_encoder:
         dim_pe: 64
         dim_emb: 64
-        stat_list: ['degree', 'eccentricity', 'cluster_coefficient', 'triangle_count']
+        stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
       node_encoder_bn: True
     finetuning:
       strategy :  #'linear_probing' or 'finetuning' or 'pre_post' (only freezes mp) or 'poly' or None
@@ -100,5 +109,3 @@ model:
       norm: 'gcn'
       filter_norm_dim: None
       bias: False
-
-  

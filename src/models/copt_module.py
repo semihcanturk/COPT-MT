@@ -6,6 +6,7 @@ from lightning import LightningModule
 from torchmetrics import MinMetric, MaxMetric, MeanMetric
 from typing import Dict, List, Callable, Union, Optional
 import warnings
+import torch.nn as nn
 #from src.models.loss.mtl_strategies import AutomaticWeightedLoss
 
 
@@ -89,8 +90,8 @@ class COPTModule(LightningModule):
         self.test_metrics = {name: MeanMetric() for name in metrics}
 
         # for tracking best so far validation accuracy
-        BestMetric = MinMetric if task in ['mds', 'mvc'] else MaxMetric
-        self.val_best_metrics = {name: BestMetric() if 'violations' not in name else MinMetric() for name in metrics}
+        BestMetric = MinMetric if task in ['mds', 'mvc', 'color', 'hcp'] else MaxMetric
+        self.val_best_metrics = {name: BestMetric() for name in metrics}
 
     def forward(self, batch):
         """Perform a forward pass through the model `self.net`.
@@ -477,9 +478,9 @@ class MultiCOPTModule(LightningModule):
         self.val_loss = MeanMetric()
         self.test_loss = MeanMetric()
 
-        self.train_losses = {task : MeanMetric() for task in self.tasks}
-        self.val_losses = {task : MeanMetric() for task in self.tasks}
-        self.test_losses = {task : MeanMetric() for task in self.tasks}
+        self.train_losses = nn.ModuleDict({task : MeanMetric() for task in self.tasks})
+        self.val_losses = nn.ModuleDict({task : MeanMetric() for task in self.tasks})
+        self.test_losses = nn.ModuleDict({task : MeanMetric() for task in self.tasks})
 
         self.train_metrics = {
             task: {name: MeanMetric() for name in task_metrics}
@@ -497,7 +498,7 @@ class MultiCOPTModule(LightningModule):
         }
 
         # for tracking best so far validation accuracy
-        MIN_TASKS = ['mds','color']
+        MIN_TASKS = ['mds','color','mvc','hcp']
         self.val_best_metrics = {
             task: {name: (MinMetric() if task in MIN_TASKS else MaxMetric()) for name in task_metrics}
             for task, task_metrics in self.metrics.items()
