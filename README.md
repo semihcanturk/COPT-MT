@@ -173,24 +173,24 @@ These packages are included in the project's requirements.txt file.
 E.g. multitask on maxcut and mis:
 
 ```bash
-python src/train.py experiment=multitask model.net.tasks=[maxcut, mis]
+python src/train.py experiment=multitask/ba_small/gcon model.net.tasks=[maxcut, mis]
 ```
 
 One can weight the different loss functions in multitask learning using model.weights, e.g. 
 
 ```bash
-python src/train.py experiment=multitask model.net.tasks=[maxcut, mis] model.weights.maxcut=0.8 model.weights.mis=0.2
+python src/train.py experiment=multitask/ba_small/gcon model.net.tasks=[maxcut, mis] model.weights.maxcut=0.8 model.weights.mis=0.2
 ```
 
 Running a task with finetuning off will upload checkpoints in logs/train/checkpoints/"task_names"/ (best.ckpt or last.ckpt)
 e.g. logs/train/checkpoints/mis/, logs/train/checkpoints/color10/, logs/train/checkpoints/mis_mds/
 
-For finetuning, we need model.net.finetuning.strategy = 'finetuning', 'linear_probing' or 'pre_post'
+For finetuning, we need model.net.finetuning.strategy = 'finetuning', 'linear_probing'
 
 E.g. Finetune mis on maxcut:
 
 ```bash
-python src/train.py experiment=multitask model.net.finetuning.strategy='finetuning' model.net.finetuning.new_tasks=[mis] model.net.finetuning.path=logs/train/checkpoints/maxcut/last.ckpt
+python src/train.py experiment=multitask/ba_small/gcon model.net.finetuning.strategy='finetuning' model.net.finetuning.new_tasks=[mis] model.net.finetuning.path=logs/train/checkpoints/maxcut/last.ckpt
 ```
 
 To pick the number of colors in graph coloring, use model.net.dims_out.color = #colors
@@ -198,7 +198,7 @@ To pick the number of colors in graph coloring, use model.net.dims_out.color = #
 E.g. 10 colors
 
 ```bash
-python src/train.py experiment=multitask model.net.tasks=[color] model.net.dim_out.color=10
+python src/train.py experiment=multitask/ba_small/gcon model.net.tasks=[color] model.net.dim_out.color=10
 ```
 
 
