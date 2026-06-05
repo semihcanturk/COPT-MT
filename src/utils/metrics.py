@@ -385,9 +385,6 @@ def hcp_violations_pyg(batch):
     for data in data_list:
         X = data.x
 
-        if data.num_nodes != 250:
-            raise ValueError(f"Expected 250 nodes, got {data.num_nodes}")
-
         if X.shape[0] != X.shape[1]:
             raise ValueError(f"HCP requires square matrix, got {X.shape}")
 
@@ -438,7 +435,7 @@ def hcp_violations_pyg(batch):
         dup_list.append(violations_dup)
         miss_list.append(violations_miss)
 
-    return torch.stack(dup_list).float().mean()
+    return torch.stack(miss_list).float().mean()
 
 
 ### PLANTEDCLIQUE ###

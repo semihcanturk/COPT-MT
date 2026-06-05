@@ -378,7 +378,8 @@ class MultiHybridGNN(GNN):
                  edge_decoding: str = 'concat',
                  graph_pooling: str = 'add',
                  hybrid_stage: str = 'concat',
-                 finetuning: Optional[Dict[str, Union[str, Any]]] = None
+                 finetuning: Optional[Dict[str, Union[str, Any]]] = None,
+                 weight_sharing: bool = False
     ):
         super().__init__(dim_in, dim_out[tasks[0]], dim_inner, head_type, encoder, conv, 
                          layers_pre_mp, layers_mp, layers_post_mp,
@@ -406,6 +407,7 @@ class MultiHybridGNN(GNN):
                 l2_norm=l2_norm,
                 dropout=dropout,
                 act=act if has_act else None,
+                weight_sharing = weight_sharing
             )
 
         # Check if fine-tuning and load pretrained weights

@@ -336,8 +336,8 @@ def hcp_loss(data, alpha=1.0, reduction='sum'):
 
     src, dst = edge_index
 
-    term1 = torch.sum((1 - X.sum(dim=1)) ** 2) / n
-    term2 = torch.sum((1 - X.sum(dim=0)) ** 2) / N
+    term1 = torch.sum((1 - X.sum(dim=1)) ** 2)
+    term2 = torch.sum((1 - X.sum(dim=0)) ** 2)
 
     X_shift = torch.roll(X, shifts=-1, dims=1)
 
@@ -349,10 +349,7 @@ def hcp_loss(data, alpha=1.0, reduction='sum'):
         (X[src] * X_shift[dst]).sum(dim=1)
     )
 
-    full = full / (n * n)
-    edge_term = edge_term / (n * n)
-
-    term3 = full - 2*edge_term
+    term3 = full-edge_term
 
     loss = alpha * (term1 + term2 + term3)
 

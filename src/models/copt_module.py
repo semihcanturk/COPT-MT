@@ -7,10 +7,8 @@ from torchmetrics import MinMetric, MaxMetric, MeanMetric
 from typing import Dict, List, Callable, Union, Optional
 import warnings
 import torch.nn as nn
-#from src.models.loss.mtl_strategies import AutomaticWeightedLoss
-
-
-# from src.models.spaces import EVAL_FUNCTION_DICT, EVAL_FUNCTION_DICT_NOLABEL, LOSS_FUNCTION_DICT
+from src.models.discretizer import IMLESampler
+from torch_geometric.data import Batch
 
 
 class COPTModule(LightningModule):
@@ -58,6 +56,7 @@ class COPTModule(LightningModule):
         metrics: Dict = None,
         labels: bool = False,
         compile: bool = False,
+        discretize: bool = False
     ) -> None:
         """Initialize a `GCNLitModule`.
 
@@ -93,6 +92,11 @@ class COPTModule(LightningModule):
         BestMetric = MinMetric if task in ['mds', 'mvc', 'color', 'hcp'] else MaxMetric
         self.val_best_metrics = {name: BestMetric() for name in metrics}
 
+        #discretizer
+        self.discretizer=None
+        if discretize:
+            self.discretizer = IMLESampler(device=self.device)
+
     def forward(self, batch):
         """Perform a forward pass through the model `self.net`.
 
@@ -122,7 +126,17 @@ class COPTModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        out = self.forward(batch)
+        pre_out = self.forward(batch)
+
+        if self.discretizer is not None:
+            discrete_data, _ = self.discretizer(pre_out.x, 1)
+            new_graphs = Batch.from_data_list(Batch.to_data_list(batch))
+            discrete_data = discrete_data.flatten(0, 1) if self.training else discrete_data.squeeze().detach()
+            new_graphs.x = discrete_data
+            out = new_graphs
+        else:
+            out = pre_out
+        
         loss = self.criterion(out)
         return out, loss
 
@@ -429,7 +443,8 @@ class MultiCOPTModule(LightningModule):
         labels: bool = False,
         compile: bool = False,
         weights: Optional[Dict[str,float]] = None,
-        strategy: str = 'sum'
+        strategy: str = 'sum',
+        discretize: bool = False
     ) -> None:
         """Initialize a `GCNLitModule`.
 
@@ -452,6 +467,11 @@ class MultiCOPTModule(LightningModule):
         self.tasks = self.net.tasks
         self.criterion = {task : criterion[task] for task in self.tasks} 
         self.metrics = {task : metrics[task] for task in self.tasks}  
+        
+        #discretizer
+        self.discretizer=None
+        if discretize:
+            self.discretizer = IMLESampler(device=self.device)
 
         if weights is None:
             self.weights = {task : 1.0/len(self.tasks) for task in self.tasks}
@@ -604,8 +624,19 @@ class MultiCOPTModule(LightningModule):
             - A tensor of target labels.
         """
 
-        out = self.forward(batch)
+        pre_out = self.forward(batch)
 
+        if self.discretizer is not None:
+            out = {}
+            for task in self.tasks:
+                discrete_data, _ = self.discretizer(pre_out[task].x, 1)
+                new_graphs = Batch.from_data_list(Batch.to_data_list(batch))
+                discrete_data = discrete_data.flatten(0, 1) if self.training else discrete_data.squeeze().detach()
+                new_graphs.x = discrete_data
+                out[task] = new_graphs
+        else:
+            out = pre_out
+            
         losses = {
             task: self.criterion[task](out[task]) 
             for task in self.tasks
