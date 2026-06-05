@@ -24,6 +24,10 @@ seed: 12345
   #data_dir: data/dimacs/mis
   #instance_names: ['1dc.64']
 
+
+data:
+  num_workers: 4
+
 trainer:
   min_epochs: 10
   max_epochs: 200
@@ -45,6 +49,7 @@ logger:
 model:
   _target_: src.models.copt_module.MultiCOPTModule
   ### define custom weights for the losses ###
+  discretize: False
   weights:
     maxcut: 1
     maxclique: 1
@@ -66,12 +71,12 @@ model:
       ### change for the number of colors/cliques desired ###
       color: 10
       cliquecover: 10
-      hcp: 250
-    dim_inner: 64
+      hcp: 200
+    dim_inner: 32
     # write here the list of tasks to train on 
     tasks : ['maxcut'] 
     layers_pre_mp: 1
-    layers_mp: 16
+    layers_mp: 8
     layers_post_mp: 1
     stage_type: 'stack'
     batch_norm: True
@@ -83,10 +88,10 @@ model:
       _target_: torch.nn.LeakyReLU
       negative_slope: 0.3
     encoder:
-      dim_hid: 64
+      dim_hid: ${..dim_inner}
       node_encoder:
-        dim_pe: 64
-        dim_emb: 64
+        dim_pe: ${...dim_inner}
+        dim_emb: ${...dim_inner}
         stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
       node_encoder_bn: True
     finetuning:
@@ -94,18 +99,19 @@ model:
       new_tasks: ['mis']
       path: ${paths.checkpoint_dir}/maxcut/last.ckpt 
     conv:
-      _target_: src.models.layer.gconconv.GCONLayer
-      dim_in: 64
-      dim_out: 64
-      channel_list: [[0], [1], [2], [4], [0, 1], [1, 2], [2, 4]]
-      combine_fn: 'att_bias'
-      num_heads: 1
-      activation_att1: 'elu'
-      activation_att2: 'elu'
-      activation: 'elu'
-      depth_mlp: 1
-      skip: True
-      add_self_loops: True
-      norm: 'gcn'
-      filter_norm_dim: None
-      bias: False
+      layer:
+        input_dim: ${...dim_inner}
+        output_dim: ${...dim_inner}
+        channel_list: [[0], [1], [2], [4], [0, 1], [1, 2], [2, 4]]
+        combine_fn: 'att_bias'
+        num_heads: 1
+        activation_att1: 'elu'
+        activation_att2: 'elu'
+        activation: 'elu'
+        depth_mlp: 1
+        skip: True
+        add_self_loops: True
+        norm: 'gcn'
+        filter_norm_dim: None
+        bias: False
+    weight_sharing: False

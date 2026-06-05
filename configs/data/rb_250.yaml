@@ -1,19 +1,19 @@
 _target_: src.data.synthetic_datamodule.SyntheticDataModule
 data_dir: ${paths.data_dir}
-format: 'ba'
-name: 'large'
-task: 'maxcut'
-batch_size: 128  # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+format: 'rb'
+name: '250'  # Options: "MUTAG", "PROTEINS", "ENZYMES", "DD", "NCI1", etc.
+task: 'maxclique'
+batch_size: 32  # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
 splits: '5-fold' # For k-fold splits (with 1 split separated for test). For train-val-test splits, use, e.g., [0.7, 0.1, 0.2]
 labels: False
-graph_stats: ['degree', 'eccentricity', 'cluster_coefficient', 'triangle_count']
+graph_stats: ['degree', 'cluster_coefficient', 'triangle_count']
 num_workers: 0
 pin_memory: False
 
 num_samples: 6000
-n_min: 800
-n_max: 1200
-num_edges: 4
+n: [250, 250]
+na: [20, 25]
+k: [5, 12]
 
 # Optional transforms to apply to the data
 # By default, NormalizeFeatures is always applied

@@ -13,7 +13,7 @@ pin_memory: False
 num_samples: 6000
 n: [800, 1200]
 na: [40, 55]
-k: [20, 25]
+k: [20, 21]
 
 # Optional transforms to apply to the data
 # By default, NormalizeFeatures is always applied

@@ -9,7 +9,7 @@ defaults:
   - override /model: gcon.yaml
   - override /task: mds.yaml
   - override /callbacks: default.yaml
-  - override /trainer: default.yaml
+  - override /trainer: gpu.yaml
   - override /logger: wandb.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -30,16 +30,8 @@ logger:
 
 model:
   net:
-    dim_inner: 256
-    encoder:
-      dim_hid: 256
-      node_encoder:
-        dim_in: 1
-        dim_pe: 256
-        dim_emb: 256
-    conv:
-      dim_in: 256
-      dim_out: 256
+    dim_inner: 64
+    # write here the list of tasks to train on 
     layers_pre_mp: 1
     layers_mp: 16
     layers_post_mp: 1
