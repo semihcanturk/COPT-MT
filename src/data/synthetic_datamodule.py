@@ -361,10 +361,10 @@ class SyntheticDataModule(LightningDataModule):
         train_indexes, val_indexes = train_indexes.tolist(), val_indexes.tolist()
         
         # Apply finetuning percentage if specified
-        if hasattr(self.hparams, 'finetuning_percent') and self.hparams.finetuning_percent < 1.0:
-            finetune_train_size = max(1, int(len(train_indexes) * self.hparams.finetuning_percent))
-            train_indexes = train_indexes[:finetune_train_size]
-            # Keep val_indexes unchanged (Option A)
+        #if hasattr(self.hparams, 'finetuning_percent') and self.hparams.finetuning_percent < 1.0:
+        #    finetune_train_size = max(1, int(len(train_indexes) * self.hparams.finetuning_percent))
+        #    train_indexes = train_indexes[:finetune_train_size]
+        #    # Keep val_indexes unchanged (Option A)
         
         self.data_train = dataset_train_val[train_indexes]
         self.data_val = dataset_train_val[val_indexes]

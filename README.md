@@ -168,7 +168,7 @@ pip install torch-geometric torch-scatter torch-sparse
 
 These packages are included in the project's requirements.txt file.
 
-## Example of multitask learning and finetuning
+## Example of multitask learning and finetuning for combinatorial optimization tasks
 
 E.g. multitask on maxcut and mis:
 
