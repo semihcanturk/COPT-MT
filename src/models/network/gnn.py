@@ -364,6 +364,7 @@ class MultiHybridGNN(GNN):
                  head_type: str = 'node',
                  encoder: Optional[torch.nn.Module] = None,
                  conv: Optional[torch.nn.Module] = None,
+                 conv_ffn: bool = False,
                  layers_pre_mp: int = 1,
                  layers_mp: int = 5,
                  layers_post_mp: int = 2,
@@ -371,6 +372,7 @@ class MultiHybridGNN(GNN):
                  batch_norm: bool = True,
                  l2_norm: bool = True,
                  final_l2_norm: bool = True,
+                 gsn: bool = False,
                  dropout: float = 0.2,
                  has_act: bool = True,
                  act: Optional[Union[str, torch.nn.Module]] = 'relu',
@@ -381,9 +383,9 @@ class MultiHybridGNN(GNN):
                  finetuning: Optional[Dict[str, Union[str, Any]]] = None,
                  weight_sharing: bool = False
     ):
-        super().__init__(dim_in, dim_out[tasks[0]], dim_inner, head_type, encoder, conv, 
+        super().__init__(dim_in, dim_out[tasks[0]], dim_inner, head_type, encoder, conv, conv_ffn, 
                          layers_pre_mp, layers_mp, layers_post_mp,
-                         stage_type, batch_norm, l2_norm, final_l2_norm, dropout, has_act, act, 
+                         stage_type, batch_norm, l2_norm, final_l2_norm, gsn, dropout, has_act, act, 
                          last_act, edge_decoding, graph_pooling)
         
         self.tasks = tasks
@@ -401,8 +403,10 @@ class MultiHybridGNN(GNN):
                 out_dim=dim_inner,
                 num_layers=layers_mp,
                 conv=conv,
+                conv_ffn=conv_ffn,
                 stage_type=stage_type,
                 final_l2_norm=final_l2_norm,
+                gsn=gsn,
                 batch_norm=batch_norm,
                 l2_norm=l2_norm,
                 dropout=dropout,

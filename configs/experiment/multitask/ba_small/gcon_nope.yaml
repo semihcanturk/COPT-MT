@@ -31,7 +31,7 @@ data:
 trainer:
   min_epochs: 10
   max_epochs: 200
-  gradient_clip_val: 0.5
+  gradient_clip_val: 0.1
   check_val_every_n_epoch: 5
 
 callbacks:
@@ -87,13 +87,7 @@ model:
     act:
       _target_: torch.nn.LeakyReLU
       negative_slope: 0.3
-    encoder:
-      dim_hid: ${..dim_inner}
-      node_encoder:
-        dim_pe: ${...dim_inner}
-        dim_emb: ${...dim_inner}
-        stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
-      node_encoder_bn: True
+    encoder: null
     finetuning:
       strategy :  #'linear_probing' or 'finetuning' or 'pre_post' (only freezes mp) or 'poly' or None
       new_tasks: ['mis']

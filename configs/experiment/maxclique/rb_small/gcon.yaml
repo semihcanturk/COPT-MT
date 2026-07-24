@@ -5,7 +5,7 @@ defaults:
   - override /model: gcon.yaml
   - override /task: maxclique.yaml
   - override /callbacks: default.yaml
-  - override /trainer: default.yaml
+  - override /trainer: gpu.yaml
   - override /logger: wandb.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -23,7 +23,6 @@ trainer:
 logger:
   wandb:
     tags: ${tags}
-    project: "COPT-MT [MaxClique]"
 
 model:
   scheduler:
@@ -49,7 +48,7 @@ model:
 
   discretize: False
   
-  callbacks:
-    early_stopping:
-      patience: 300
+callbacks:
+  early_stopping:
+    patience: 300
 

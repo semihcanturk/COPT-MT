@@ -196,7 +196,7 @@ class SyntheticDataModule(LightningDataModule):
         num_workers: int = 0,
         pin_memory: bool = False,
         transforms: Optional[Union[Dict[str, Any], BaseTransform]] = None,
-        finetuning_percent: float = 1.0,
+        #finetuning_percent: float = 1.0,
         **dataset_kwargs,
     ) -> None:
         """Initialize a `TUDataModule`.
@@ -338,9 +338,9 @@ class SyntheticDataModule(LightningDataModule):
 
         # Create dataset subsets using the custom SyntheticDatasetSubset class
 
-        if hasattr(self.hparams, 'finetuning_percent') and self.hparams.finetuning_percent < 1.0:
-            finetune_train_size = max(1, int(len(train_indices) * self.hparams.finetuning_percent))
-            train_indices = train_indices[:finetune_train_size]
+        #if hasattr(self.hparams, 'finetuning_percent') and self.hparams.finetuning_percent < 1.0:
+        #    finetune_train_size = max(1, int(len(train_indices) * self.hparams.finetuning_percent))
+        #    train_indices = train_indices[:finetune_train_size]
 
         self.data_train = SyntheticSubset(dataset, train_indices) if len(train_indices) > 0 else None
         self.data_val = SyntheticSubset(dataset, val_indices) if len(val_indices) > 0 else None
