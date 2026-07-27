@@ -68,7 +68,7 @@ def maxclique_loss(output, batch, beta=0.1):
 def maxcut_loss_pyg(batch):
     x = (batch.x - 0.5) * 2
     src, dst = batch.edge_index[0], batch.edge_index[1]
-    return torch.sum(x[src] * x[dst]) / len(batch.batch.unique())
+    return torch.sum(x[src] * x[dst]) / (10*len(batch.batch.unique()))
 
 
 def maxcut_loss(data):
@@ -202,7 +202,7 @@ def mds_loss_pyg(batch, beta=1.0, reduction='sum'):
     if reduction == 'mean':
         return loss / batch.size(0)
     else:
-        return loss
+        return loss / 100
 
 
 ### MIS ###

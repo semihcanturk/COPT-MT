@@ -19,11 +19,13 @@ model:
       _target_: src.models.loss.copt_loss.mds_loss_pyg
       _partial_: True
       beta: 1.0
-      reduction: 'mean'
+      reduction: 'sum' 
     mis:
       _target_: src.models.loss.copt_loss.mis_loss_pyg
       _partial_: True
+      alpha: 1.0
       beta: 1.01
+      reduction: 'sum'
     color:
       _target_: src.models.loss.copt_loss.color_loss_pyg
       _partial_: True
@@ -34,6 +36,9 @@ model:
     mvc:
       _target_: src.models.loss.copt_loss.mvc_loss
       _partial_: True
+      alpha: 1.0
+      beta: 1.01
+      reduction: 'sum'
     hcp:
       _target_: src.models.loss.copt_loss.hcp_loss
       _partial_: True

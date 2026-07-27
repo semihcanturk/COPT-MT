@@ -16,21 +16,12 @@ tags: ["multitask", "ba", "small", "gcon"]
 
 seed: 12345
 
-#data:
-  #for dimacs instances, uncomment and modify the following:
-  #format: 'dimacs'
-  #name: 'mis'
-  #task: 'mis'
-  #data_dir: data/dimacs/mis
-  #instance_names: ['1dc.64']
-
-
 data:
   num_workers: 4
 
 trainer:
   min_epochs: 10
-  max_epochs: 200
+  max_epochs: 100
   gradient_clip_val: 0.5
   check_val_every_n_epoch: 5
 
@@ -48,9 +39,9 @@ logger:
 
 model:
   _target_: src.models.copt_module.MultiCOPTModule
-  ### define custom weights for the losses ###
   discretize: False
   weights:
+    ### define custom weights for the losses ###
     maxcut: 1
     maxclique: 1
     mds: 1
@@ -59,7 +50,7 @@ model:
     cliquecover: 1
     mvc: 1
     hcp: 1
-  strategy: 'sum' #sum OR alternate OR pcgrad
+  strategy: 'sum' #sum OR alternate OR pcgrad (MTL strat)
   net:
     _target_: src.models.network.gnn.MultiHybridGNN
     dim_out:
@@ -98,6 +89,7 @@ model:
       strategy :  #'linear_probing' or 'finetuning' or 'pre_post' (only freezes mp) or 'poly' or None
       new_tasks: ['mis']
       path: ${paths.checkpoint_dir}/maxcut/last.ckpt 
+    weight_sharing: True
     conv:
       layer:
         input_dim: ${...dim_inner}
@@ -114,4 +106,3 @@ model:
         norm: 'gcn'
         filter_norm_dim: None
         bias: False
-    weight_sharing: False

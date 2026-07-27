@@ -48,9 +48,9 @@ logger:
 
 model:
   _target_: src.models.copt_module.MultiCOPTModule
-  ### define custom weights for the losses ###
   discretize: False
   weights:
+    ### define custom weights for the losses ###
     maxcut: 1
     maxclique: 1
     mds: 1
@@ -92,6 +92,7 @@ model:
       strategy :  #'linear_probing' or 'finetuning' or 'pre_post' (only freezes mp) or 'poly' or None
       new_tasks: ['mis']
       path: ${paths.checkpoint_dir}/maxcut/last.ckpt 
+    weight_sharing: True
     conv:
       layer:
         input_dim: ${...dim_inner}
@@ -108,4 +109,3 @@ model:
         norm: 'gcn'
         filter_norm_dim: None
         bias: False
-    weight_sharing: False
