@@ -45,17 +45,18 @@ callbacks:
 logger:
   wandb:
     tags: ${tags}
+    project: "COPT-MT [MTL]"
 
 model:
   _target_: src.models.copt_module.MultiCOPTModule
   discretize: False
   weights:
     ### define custom weights for the losses ###
-    maxcut: 1
+    maxcut: 0.1
     maxclique: 1
-    mds: 1
+    mds: 0.005
     mis: 1
-    color: 1
+    color: 0.001
     cliquecover: 1
     mvc: 1
     hcp: 1

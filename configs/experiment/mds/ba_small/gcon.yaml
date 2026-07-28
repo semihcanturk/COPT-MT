@@ -27,11 +27,11 @@ trainer:
 logger:
   wandb:
     tags: ${tags}
+    project: "COPT-MT [MDS]"
 
 model:
   net:
     dim_inner: 64
-    # write here the list of tasks to train on 
     layers_pre_mp: 1
     layers_mp: 16
     layers_post_mp: 1

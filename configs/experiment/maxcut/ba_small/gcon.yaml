@@ -27,6 +27,7 @@ trainer:
 logger:
   wandb:
     tags: ${tags}
+    project: "COPT-MT [MaxCut]"
 
 model:
   net:

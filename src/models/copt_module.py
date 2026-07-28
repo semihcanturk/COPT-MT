@@ -473,19 +473,15 @@ class MultiCOPTModule(LightningModule):
         if discretize:
             self.discretizer = IMLESampler(device=self.device)
 
+        # MTL strategy
         if weights is None:
-            self.weights = {task : 1.0/len(self.tasks) for task in self.tasks}
+            self.weights = {task : 1.0 for task in self.tasks}
         else:
             self.weights = {task : weights[task] for task in self.tasks}
-            #Make sure weights add up to 1
-            if abs(sum(self.weights.values()) - 1) > 1e-6:
-                self.weights = {task : 1.0/len(self.tasks) for task in self.tasks}
-                warnings.warn(f"Provided weights sum to {sum(self.weights.values()):.2f}, not 1 — reset to uniform (1/{len(self.tasks)}).", UserWarning)
 
-        # MTL strategy
         if strategy not in ['sum', 'alternate', 'pcgrad']:
             raise ValueError(f"Invalid strategy '{strategy}'. Must be one of {['sum', 'alternate', 'pcgrad']}")    
-        self.strategy = strategy # - to be implemented multitask loss strategies (e.g. GradNorm, PCGrad, etc.)
+        self.strategy = strategy
         self.current_task_idx = 0
         self.task_list = list(self.tasks)
         if strategy == 'pcgrad':
