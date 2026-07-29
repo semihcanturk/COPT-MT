@@ -1,12 +1,11 @@
+import copy
+import functools
 from typing import Union, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn.resolver import activation_resolver
-
-import copy
-import functools
 
 
 class GeneralLayer(torch.nn.Module):
@@ -33,10 +32,13 @@ class GeneralLayer(torch.nn.Module):
         if self.lin:
             self.layer = Linear(in_dim, out_dim, **kwargs)
         else:
-            if weight_sharing:
-                self.layer = layer
-            else: 
-                self.layer = copy.deepcopy(layer)
+            if isinstance(layer.layer, functools.partial):
+                self.layer = LayerWrapper(layer.layer(in_channels=in_dim, out_channels=out_dim), edge_attr=True)
+            else:
+                if weight_sharing:
+                    self.layer = layer
+                else:
+                    self.layer = copy.deepcopy(layer)
 
         self.batch_norm = batch_norm
         self.l2_norm = l2_norm
