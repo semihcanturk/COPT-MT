@@ -6,14 +6,17 @@ from src.data.datasets.synthetic import SyntheticDataset
 
 
 class ERDataset(SyntheticDataset):
-    def __init__(self, name, root, transform=None, pre_transform=None):
-        super().__init__('er', name, root, transform, pre_transform)
+    def __init__(self, root, name, n_min, n_max, p, num_samples, multiprocessing=False, num_workers=0, transform=None, pre_transform=None):
+        self.n_min = n_min
+        self.n_max = n_max
+        self.p = p
+        super().__init__(root, 'er', name, num_samples, multiprocessing, num_workers, transform, pre_transform)
 
     def create_graph(self, idx):
-        n = np.random.randint(self.params.n_min, self.params.n_max + 1)
-        g = nx.fast_gnp_random_graph(n, p=self.params.p)
+        n = np.random.randint(self.n_min, self.n_max + 1)
+        g = nx.fast_gnp_random_graph(n, p=self.p)
         while not nx.is_connected(g):
-            g = nx.fast_gnp_random_graph(n, p=self.params.p)
+            g = nx.fast_gnp_random_graph(n, p=self.p)
 
         if isinstance(g, nx.DiGraph):
             g = g.to_undirected()

@@ -34,6 +34,7 @@ from src.utils import (
     instantiate_loggers,
     log_hyperparameters,
     task_wrapper,
+    organize_checkpoint
 )
 
 log = RankedLogger(__name__, rank_zero_only=True)
@@ -89,6 +90,18 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if cfg.get("train"):
         log.info("Starting training!")
         trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+
+        # Log weights in task-labelled folder WHEN WE ARE NOT FINETUNING
+        is_finetuning = (
+            cfg.model.net.get("finetuning") 
+            and cfg.model.net.finetuning.get("strategy") is not None
+            and cfg.model.net.finetuning.get("path") is not None
+        )
+        
+        if cfg.get("auto_organize_checkpoints", True) and not is_finetuning:
+            organize_checkpoint(cfg, trainer)
+        elif is_finetuning:
+            log.info("Skipping checkpoint organization (finetuning mode)")
 
     train_metrics = trainer.callback_metrics
 

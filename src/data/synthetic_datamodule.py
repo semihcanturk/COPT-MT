@@ -20,6 +20,7 @@ from src.data.datasets.er_dataset import ERDataset
 from src.data.datasets.bp_dataset import BPDataset
 from src.data.datasets.pc_dataset import PCDataset
 from src.data.datasets.rb_dataset import RBDataset
+from src.data.datasets.dimacs_dataset import DIMACSDataset
 from src.transforms.graph_stats import ComputeGraphStats, ComputeComplementGraphStats
 from src.transforms.transforms import pre_transform_in_memory
 
@@ -195,6 +196,7 @@ class SyntheticDataModule(LightningDataModule):
         num_workers: int = 0,
         pin_memory: bool = False,
         transforms: Optional[Union[Dict[str, Any], BaseTransform]] = None,
+        #finetuning_percent: float = 1.0,
         **dataset_kwargs,
     ) -> None:
         """Initialize a `TUDataModule`.
@@ -230,6 +232,7 @@ class SyntheticDataModule(LightningDataModule):
             'bp': BPDataset,
             'pc': PCDataset,
             'rb': RBDataset,
+            'dimacs' : DIMACSDataset
         }[self.hparams.format]
         self.dataset_kwargs = dataset_kwargs
 
@@ -334,23 +337,37 @@ class SyntheticDataModule(LightningDataModule):
         test_indices = indices[train_size + val_size:]
 
         # Create dataset subsets using the custom SyntheticDatasetSubset class
-        self.data_train = SyntheticSubset(dataset, train_indices)
-        self.data_val = SyntheticSubset(dataset, val_indices)
-        self.data_test = SyntheticSubset(dataset, test_indices)
+
+        #if hasattr(self.hparams, 'finetuning_percent') and self.hparams.finetuning_percent < 1.0:
+        #    finetune_train_size = max(1, int(len(train_indices) * self.hparams.finetuning_percent))
+        #    train_indices = train_indices[:finetune_train_size]
+
+        self.data_train = SyntheticSubset(dataset, train_indices) if len(train_indices) > 0 else None
+        self.data_val = SyntheticSubset(dataset, val_indices) if len(val_indices) > 0 else None
+        self.data_test = SyntheticSubset(dataset, test_indices) if len(test_indices) > 0 else None
+
 
     def split_k_fold(self, dataset, k):
         # separate test set
         num_samples = len(dataset)
         indices = list(range(num_samples))
         train_val_indexes, test_indexes = train_test_split(indices, test_size=float(1 / (k + 1)), random_state=self.hparams.split_seed)
-        self.data_test = dataset[test_indexes]
+        self.data_test = dataset[test_indexes]   
         # choose fold to train on
         kf = KFold(n_splits=k, shuffle=True, random_state=self.hparams.split_seed)
-        dataset = dataset[train_val_indexes]
-        all_splits = [k for k in kf.split(dataset)]
+        dataset_train_val = dataset[train_val_indexes]
+        all_splits = [k for k in kf.split(dataset_train_val)]
         train_indexes, val_indexes = all_splits[self.hparams.split_id]
         train_indexes, val_indexes = train_indexes.tolist(), val_indexes.tolist()
-        self.data_train, self.data_val = dataset[train_indexes], dataset[val_indexes]
+        
+        # Apply finetuning percentage if specified
+        #if hasattr(self.hparams, 'finetuning_percent') and self.hparams.finetuning_percent < 1.0:
+        #    finetune_train_size = max(1, int(len(train_indexes) * self.hparams.finetuning_percent))
+        #    train_indexes = train_indexes[:finetune_train_size]
+        #    # Keep val_indexes unchanged (Option A)
+        
+        self.data_train = dataset_train_val[train_indexes]
+        self.data_val = dataset_train_val[val_indexes]
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
@@ -393,6 +410,8 @@ class SyntheticDataModule(LightningDataModule):
 
         :return: The train dataloader.
         """
+        if not self.data_train:
+            return None
         return DataLoader(
             dataset=self.data_train,
             batch_size=self.batch_size_per_device,
@@ -406,6 +425,8 @@ class SyntheticDataModule(LightningDataModule):
 
         :return: The validation dataloader.
         """
+        if not self.data_val:
+            return None
         return DataLoader(
             dataset=self.data_val,
             batch_size=self.batch_size_per_device,

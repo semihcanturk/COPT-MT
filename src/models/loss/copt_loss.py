@@ -117,12 +117,62 @@ def maxcut_mae(batch):
 
 
 ### COLORING ###
+'''
+def color_loss_pyg(data):
+    X = torch.nn.functional.softmax(data.x,dim=-1)
+    edge_index, _ = remove_self_loops(data.edge_index)
+    src, dst = edge_index
 
+    return torch.sum(X[src] * X[dst])
+'''
+
+#This one perform way better.
+def color_loss_pyg(data, beta = 0.001):
+    X = data.x
+    edge_index, _ = remove_self_loops(data.edge_index)
+    src, dst = edge_index
+    term1 = torch.sum((1-X.sum(dim=-1))**2)
+    term2 = 0.5*torch.sum(X[src] * X[dst])
+    #L1 regularization on the colors to force extra colors not to be used
+    #color_usage = X.sum(dim=0)
+    #term3 = beta * color_usage.sum()
+    #term3 = beta * X.max(dim=0).values.sum()
+
+    return term1+term2 #+term3
+
+
+'''
 def color_loss(output, adj):
     output = (output - 0.5) * 2
 
     return torch.matmul(output.transpose(-1, -2), torch.matmul(adj, output)).diagonal(dim1=-1, dim2=-2).sum() - 4 * torch.abs(output).sum()
+'''
 
+### CLIQUE COVER ###
+'''
+def cliquecover_loss_pyg(data):
+    X = torch.nn.functional.softmax(data.x,dim=-1)
+    edge_index, _ = remove_self_loops(data.edge_index)
+    src, dst = edge_index
+
+    return X.sum() ** 2 - torch.sum(X[src] * X[dst]) - torch.sum(X ** 2)
+
+'''
+'''
+def cliquecover_loss_pyg(data):
+    X = torch.nn.functional.softmax(data.x,dim=-1)
+    edge_index, _ = remove_self_loops(data.edge_index)
+    src, dst = edge_index
+
+    return -0.5 * X.sum() + 0.5 * (X.sum(dim=0)**2).sum() - torch.sum(X[src] * X[dst])
+'''
+
+def cliquecover_loss_pyg(data):
+    X = data.x
+    edge_index, _ = remove_self_loops(data.edge_index)
+    src, dst = edge_index
+
+    return torch.sum((1-X.sum(dim=-1))**2) -0.5 * X.sum() + 0.5 * (X.sum(dim=0)**2).sum() - torch.sum(X[src] * X[dst])
 
 ### PLANTEDCLIQUE ###
 
@@ -143,7 +193,7 @@ def mds_loss_pyg(batch, beta=1.0, reduction='sum'):
 
     loss = p.sum() + beta * (
         scatter(
-            torch.log1p(-p)[row],
+            torch.log1p(0.000001-p)[row],
             index=col,
             reduce='sum',
         ).exp() * (1 - p)
@@ -171,6 +221,21 @@ def mis_loss_old(batch, beta=0.1):
 
     return loss / batch.size(0)
 
+'''
+#Performs better than the above
+def mis_loss_pyg(batch, beta=2): #P=2 in QUBO paper
+    data_list = batch.to_data_list()
+
+    loss = 0.0
+    for data in data_list:
+        src, dst = data.edge_index[0], data.edge_index[1]
+
+        loss1 = torch.sum(data.x[src] * data.x[dst])
+        loss2 = data.x.sum()
+        loss += (- loss2 + beta * loss1) * data.num_nodes
+
+    return loss / batch.size(0)
+'''
 
 def mis_loss_pyg(batch, alpha=1.0, beta=1.01, reduction='sum', complement=False):
     """
@@ -196,9 +261,9 @@ def mis_loss_pyg(batch, alpha=1.0, beta=1.01, reduction='sum', complement=False)
         loss += (size_term + penalty_term) / data.num_nodes
 
     if reduction == 'mean':
-        return loss / batch.size(0)
+        return 2*loss / batch.size(0)
     else:
-        return loss
+        return 2*loss
 
 
 def mis_loss_qubo_pyg(batch, penalty=2.0, reduction='sum', complement=False):
@@ -257,3 +322,36 @@ def mvc_loss(batch, alpha=1.0, beta=1.01, reduction='sum'):
 
 def maxbipartite_loss(output, adj, beta):
     return maxclique_loss(output, torch.matrix_power(adj, 2), beta)
+
+
+
+### Hamiltonian Cycle
+
+def hcp_loss(data, alpha=1.0, reduction='sum'):
+    X = data.x
+    edge_index, _ = remove_self_loops(data.edge_index)
+
+    n = X.size(0)
+    N = X.size(1)
+
+    src, dst = edge_index
+
+    term1 = torch.sum((1 - X.sum(dim=1)) ** 2)
+    term2 = torch.sum((1 - X.sum(dim=0)) ** 2)
+
+    X_shift = torch.roll(X, shifts=-1, dims=1)
+
+    col_sum = X.sum(dim=0)
+    col_sum_shift = X_shift.sum(dim=0)
+    full = torch.sum(col_sum * col_sum_shift)
+
+    edge_term = torch.sum(
+        (X[src] * X_shift[dst]).sum(dim=1)
+    )
+
+    term3 = full-edge_term
+
+    loss = alpha * (term1 + term2 + term3)
+
+    #return loss if reduction == 'sum' else loss.mean()
+    return loss if reduction == 'sum' else loss.mean()

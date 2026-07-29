@@ -5,6 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn.resolver import activation_resolver
 
+import copy
+import functools
+
 
 class GeneralLayer(torch.nn.Module):
     def __init__(
@@ -17,6 +20,7 @@ class GeneralLayer(torch.nn.Module):
             dropout: float,
             act: Optional[Union[str, torch.nn.Module]],
             ffn: bool = False,
+            weight_sharing: bool = False,
             **kwargs,
     ):
         super().__init__()
@@ -25,7 +29,15 @@ class GeneralLayer(torch.nn.Module):
             self.lin = True
         else:
             self.lin = False
-        self.layer = Linear(in_dim, out_dim, **kwargs) if self.lin else layer
+
+        if self.lin:
+            self.layer = Linear(in_dim, out_dim, **kwargs)
+        else:
+            if weight_sharing:
+                self.layer = layer
+            else: 
+                self.layer = copy.deepcopy(layer)
+
         self.batch_norm = batch_norm
         self.l2_norm = l2_norm
 

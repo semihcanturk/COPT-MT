@@ -46,3 +46,4 @@ model:
         _target_: src.models.encoder.graph_stats_encoder.GraphStatsEncoder
         stat_list: ['degree', 'cluster_coefficient', 'triangle_count']
 
+  discretize: False

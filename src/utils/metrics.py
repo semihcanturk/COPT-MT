@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torch_geometric.data import Batch
 from torch_geometric.utils import unbatch, unbatch_edge_index, add_self_loops, \
-    remove_self_loops
+    remove_self_loops, to_dense_adj
 from torch_scatter import scatter
 
 
@@ -246,6 +246,98 @@ def maxcut_acc(data):
 
 ### COLORING ###
 
+def color_violations_pyg(batch):
+    data_list = batch.to_data_list()
+    violation_total = []
+
+    for data in data_list:
+        preds = torch.argmax(data.x,dim=-1) 
+
+        edge_index, _ = remove_self_loops(data.edge_index)
+        src, dst = edge_index
+
+        violations = (preds[src] == preds[dst]).sum() // 2
+        violation_total.append(violations)
+
+    return torch.Tensor(violation_total).mean()
+
+def soft_guided_repair(data):
+    """
+    Greedy repair decoder using soft assignments to guide color selection.
+    - Fixes violated nodes in ascending confidence order (least confident first)
+    - Among available colors, picks the one with highest soft probability
+    - Excludes current color to force a real change
+    """
+    X = data.x  # [N, K]
+    edge_index, _ = remove_self_loops(data.edge_index)
+    src, dst = edge_index
+
+    coloring = X.argmax(dim=-1).clone()
+    k = X.shape[-1]
+    N = X.shape[0]
+    device = X.device
+
+    # Precompute adjacency list
+    adj = [dst[src == i] for i in range(N)]
+
+    # Precompute soft-probability color order per node (never changes)
+    sorted_colors_all = X.argsort(dim=-1, descending=True).tolist()  # [N, K]
+
+    for _ in range(k):
+        # Count conflicts per node
+        conflict_count = torch.zeros(N, dtype=torch.long, device=device)
+        same_color = (coloring[src] == coloring[dst])
+        if not same_color.any():
+            break
+        conflict_count.scatter_add_(
+            0, src[same_color],
+            torch.ones(same_color.sum(), dtype=torch.long, device=device)
+        )
+
+        violated_nodes = (conflict_count > 0).nonzero(as_tuple=True)[0]
+
+        # Primary order: ascending confidence in current (wrong) color
+        # i.e. least confident nodes are fixed first — easier to recolor
+        current_confidence = X[violated_nodes, coloring[violated_nodes]]
+        # Secondary order: descending conflict count as tie-breaker
+        # normalize conflict count to [0, 1] for stable combination
+        norm_conflicts = conflict_count[violated_nodes].float()
+        norm_conflicts = norm_conflicts / (norm_conflicts.max() + 1e-8)
+        # Low confidence + high conflict = fix first
+        priority = current_confidence - norm_conflicts  # lower = fix sooner
+        order = conflict_count[violated_nodes].argsort(descending=True)
+        violated_nodes = violated_nodes[order]
+
+        for node in violated_nodes.tolist():
+            # Recheck: is this node still in conflict after previous fixes?
+            neighbor_colors_list = coloring[adj[node]].tolist()
+            if coloring[node].item() not in neighbor_colors_list:
+                continue  # already resolved, skip
+
+            neighbor_colors = set(neighbor_colors_list)
+            neighbor_colors.add(coloring[node].item())
+            for color in sorted_colors_all[node]:
+                if color not in neighbor_colors:
+                    coloring[node] = color
+                    break
+
+    return coloring, edge_index
+
+
+def color_repaired_violations_pyg(batch):
+    data_list = batch.to_data_list()
+    violation_total = []
+
+    for data in data_list:
+        preds, edge_index = soft_guided_repair(data)
+        src, dst = edge_index
+
+        violations = (preds[src] == preds[dst]).sum() // 2
+        violation_total.append(violations)
+
+    return torch.Tensor(violation_total).mean()
+
+
 def color_acc(output, adj, deg_vect):
     output = (output - 0.5) * 2
 
@@ -253,6 +345,97 @@ def color_acc(output, adj, deg_vect):
     bin_enc = (one_hot.float() - 0.5) * 2
 
     return (torch.matmul(bin_enc.transpose(-1, -2), torch.matmul(adj, bin_enc)).diagonal(dim1=-1, dim2=-2).sum(-1) / deg_vect).mean()
+
+
+### CLIQUE COVERING ###
+
+def cliquecover_violations_pyg(batch):
+    data_list = batch.to_data_list()
+    missing_total = []
+
+    for data in data_list:
+        preds_idx = torch.argmax(data.x, dim=-1)  # color per node
+        n = data.num_nodes
+
+        # Build adjacency (0 = no edge, 1 = edge)
+        adj = to_dense_adj(data.edge_index, max_num_nodes=n)[0]
+        adj.fill_diagonal_(0)
+
+        # Compare all pairs
+        same_color = (preds_idx.unsqueeze(0) == preds_idx.unsqueeze(1)).fill_diagonal_(False)  # [n, n]
+        non_edges = (adj == 0)
+        missing = (same_color & non_edges).sum() // 2
+
+        missing_total.append(missing)
+
+    return torch.Tensor(missing_total).mean()
+
+
+### HAMILTONIAN CYCLE PROBLEM ###
+
+def hcp_violations_pyg(batch):
+    data_list = batch.to_data_list()
+
+    total_list = []
+    pos_list = []
+    edge_list = []
+    dup_list = []
+    miss_list = []
+
+    for data in data_list:
+        X = data.x
+
+        if X.shape[0] != X.shape[1]:
+            raise ValueError(f"HCP requires square matrix, got {X.shape}")
+
+        edge_index, _ = remove_self_loops(data.edge_index)
+        src, dst = edge_index
+        n = X.shape[0]
+
+        # --- assignments ---
+        preds = torch.argmax(X, dim=-1)
+
+        # --- position violations (better decomposition) ---
+        counts = torch.bincount(preds, minlength=n)
+
+        violations_dup = torch.sum(torch.clamp(counts - 1, min=0))
+        violations_miss = torch.sum(counts == 0)
+        violations_pos = violations_dup + violations_miss
+
+        # --- position → node mapping ---
+        pos2node = torch.full((n,), -1, device=X.device)
+        for p in preds.unique():
+            idx = (preds == p).nonzero(as_tuple=True)[0]
+            pos2node[p] = idx[0]
+
+        # --- cycle ---
+        next_pos = torch.roll(torch.arange(n, device=X.device), -1)
+        u = pos2node
+        v = pos2node[next_pos]
+
+        valid_mask = (u >= 0) & (v >= 0)
+        u, v = u[valid_mask], v[valid_mask]
+
+        if u.numel() == 0:
+            total = violations_pos
+            violations_edge = torch.tensor(0, device=X.device)
+        else:
+            adj = torch.zeros((n, n), dtype=torch.bool, device=X.device)
+            adj[src, dst] = True
+
+            if hasattr(data, "is_undirected") and data.is_undirected():
+                adj[dst, src] = True
+
+            violations_edge = (~adj[u, v]).sum()
+            total = violations_pos + violations_edge
+
+        total_list.append(total)
+        pos_list.append(violations_pos)
+        edge_list.append(violations_edge)
+        dup_list.append(violations_dup)
+        miss_list.append(violations_miss)
+
+    return torch.stack(miss_list).float().mean()
 
 
 ### PLANTEDCLIQUE ###
